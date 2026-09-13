@@ -1,0 +1,17 @@
+{
+  "name": "railway-disruption-management",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "migrate": "node scripts/run-migrations.mjs",
+    "verify:schema": "node scripts/verify-schema.mjs",
+    "seed": "node scripts/run-seeds.mjs",
+    "verify:seed": "node scripts/verify-seed.mjs",
+    "validate:db": "node scripts/run-validation.mjs",
+    "logic:apply": "node scripts/apply-db-logic.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.13.1"
+  }
+}
