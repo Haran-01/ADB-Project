@@ -59,7 +59,10 @@ export function apiRoutes({ pool, graph, analysis }) {
       const exists = await pool.query('select id from railway_main.disruptions where id=$1', [id]);
       if (!exists.rows.length) return res.status(404).json({ error: 'Disruption not found' });
       const { rows } = await pool.query(
-        `select * from railway_main.${table} where disruption_id=$1 order by created_at,id limit $2 offset $3`,
+        `select r.*,t.train_number,t.name as train_name from railway_main.${table} r
+         join railway_main.train_journeys j on j.id=r.train_journey_id
+         join railway_main.trains t on t.id=j.train_id
+         where r.disruption_id=$1 order by r.created_at,r.id limit $2 offset $3`,
         [id, limit, offset],
       );
       res.json({ data: rows, limit, offset });

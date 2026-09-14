@@ -7,6 +7,7 @@ export function DisruptionSimulator({ tracks = [], stations = [], onCreated }) {
   const [severity, setSeverity] = useState('HIGH');
   const [target, setTarget] = useState('');
   const [description, setDescription] = useState('');
+  const [connectedOnly, setConnectedOnly] = useState(true);
   const mutation = useCreateDisruption();
   const disruptions = useDisruptions();
   const occupied = new Set(
@@ -16,8 +17,17 @@ export function DisruptionSimulator({ tracks = [], stations = [], onCreated }) {
   );
   const stationMode = type === 'STATION_CLOSURE';
   const options = useMemo(
-    () => (stationMode ? stations : tracks.filter((t) => t.status === 'ACTIVE')),
-    [stationMode, stations, tracks],
+    () =>
+      stationMode
+        ? stations.filter(
+            (s) =>
+              !connectedOnly ||
+              tracks.some(
+                (t) => t.from_station_code === s.station_code || t.to_station_code === s.station_code,
+              ),
+          )
+        : tracks.filter((t) => t.status === 'ACTIVE'),
+    [stationMode, stations, tracks, connectedOnly],
   );
   useEffect(() => setTarget(''), [stationMode]);
   const submit = async (event) => {
@@ -57,6 +67,19 @@ export function DisruptionSimulator({ tracks = [], stations = [], onCreated }) {
           <option value="STATION_CLOSURE">Station closure</option>
         </select>
       </label>
+      {stationMode && (
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={connectedOnly}
+            onChange={(e) => {
+              setConnectedOnly(e.target.checked);
+              setTarget('');
+            }}
+          />
+          Show only stations connected to this railway network
+        </label>
+      )}
       <label>
         {stationMode ? 'Station' : 'Track segment'}
         <select required value={target} onChange={(e) => setTarget(e.target.value)}>
@@ -75,6 +98,22 @@ export function DisruptionSimulator({ tracks = [], stations = [], onCreated }) {
           ))}
         </select>
       </label>
+      {target && (
+        <div className="scenario-preview">
+          <b>{stationMode ? 'This station will close' : 'This track will be disrupted'}</b>
+          <p>
+            {stationMode
+              ? stations.find((s) => s.id === target)?.name
+              : (() => {
+                  const t = tracks.find((t) => t.track_id === target);
+                  return `${stations.find((s) => s.station_code === t?.from_station_code)?.name ?? t?.from_station_code} → ${stations.find((s) => s.station_code === t?.to_station_code)?.name ?? t?.to_station_code}`;
+                })()}
+          </p>
+          <small>
+            After submission: check affected journeys → search for alternate paths → review results.
+          </small>
+        </div>
+      )}
       <div className="severity-row">
         <span>Severity</span>
         {['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'].map((value) => (

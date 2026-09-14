@@ -1,6 +1,6 @@
-import { Activity, AlertTriangle, Clock3, Gauge, Menu, Radio, TrainFront, X } from 'lucide-react';
+import { Activity, AlertTriangle, Clock3, Gauge, Menu, Radio, TrainFront, X, CircleHelp } from 'lucide-react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useHealth } from '../services/queries.js';
 import { useRealtime } from '../services/realtime.jsx';
 
@@ -9,18 +9,35 @@ const links = [
   { to: '/disruptions', label: 'Disruptions', icon: AlertTriangle },
   { to: '/trains', label: 'Trains', icon: TrainFront },
   { to: '/history', label: 'Event history', icon: Clock3 },
+  { to: '/help', label: 'How it works', icon: CircleHelp },
 ];
 const titles = {
   '/': 'Network operations',
   '/disruptions': 'Disruption control',
   '/trains': 'Active fleet',
   '/history': 'Event history',
+  '/help': 'Your operator guide',
 };
 export function AppShell() {
   const [open, setOpen] = useState(false);
-  const { pathname } = useLocation();
+  const { pathname, hash } = useLocation();
   const health = useHealth();
   const realtime = useRealtime();
+  useEffect(() => {
+    setOpen(false);
+    if (!hash) window.scrollTo(0, 0);
+    else {
+      const frame = requestAnimationFrame(() => document.getElementById(hash.slice(1))?.scrollIntoView());
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [pathname, hash]);
+  useEffect(() => {
+    const close = (e) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, []);
   return (
     <div className="app-shell">
       <aside className={`sidebar ${open ? 'sidebar-open' : ''}`}>
@@ -75,13 +92,21 @@ export function AppShell() {
           </div>
           <div className="topbar-state">
             <Activity size={17} />
-            <span>{realtime.connected ? 'Live' : 'Snapshot'}</span>
+            <span>{realtime.connected ? 'Updates connected' : 'Reconnecting'}</span>
           </div>
         </header>
         <main>
           <Outlet />
         </main>
       </div>
+      <nav className="mobile-navigation" aria-label="Main navigation">
+        {links.map(({ to, label, icon: Icon }) => (
+          <NavLink key={to} to={to} end={to === '/'}>
+            <Icon size={19} />
+            <span>{label === 'Event history' ? 'Activity' : label === 'How it works' ? 'Guide' : label}</span>
+          </NavLink>
+        ))}
+      </nav>
       {open && (
         <button className="scrim" onClick={() => setOpen(false)} aria-label="Close navigation overlay" />
       )}

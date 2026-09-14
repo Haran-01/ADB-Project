@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { ArrowDown, ArrowRight, Radio, TrainFront, AlertTriangle, MapPin } from 'lucide-react';
 import { DisruptionSimulator } from '../components/DisruptionSimulator.jsx';
 import { IncidentWorkspace, IncidentEvents, humanize } from '../components/IncidentWorkspace.jsx';
@@ -13,13 +14,18 @@ export function DashboardPage() {
     map = useNetworkMap(),
     tracks = useTracks(),
     stations = useStations();
-  const [selectedId, setSelectedId] = useState(null),
-    [created, setCreated] = useState(null);
+  const [params, setParams] = useSearchParams();
+  const selectedId = params.get('incident');
+  const responseMode = params.get('view') === 'response';
+  const [created, setCreated] = useState(null),
+    [search, setSearch] = useState('');
+  const setSelectedId = (id) => setParams({ incident: id, view: 'response' });
   const active = (disruptions.data ?? []).filter((d) => ['OPEN', 'ANALYZING'].includes(d.status));
   useEffect(() => {
-    if (!selectedId && active.length) setSelectedId(active[0].id);
-  }, [disruptions.data, selectedId]);
-  const selected = disruptions.data?.find((d) => d.id === selectedId) ?? created;
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, [responseMode, selectedId]);
+  const selected =
+    disruptions.data?.find((d) => d.id === selectedId) ?? created ?? (responseMode ? active[0] : null);
   const location = (d) => {
     const track = tracks.data?.find((t) => t.track_id === d?.track_id);
     const station = stations.data?.find((s) => s.id === d?.station_id);
@@ -29,13 +35,45 @@ export function DashboardPage() {
         ? `${track.from_station_code} → ${track.to_station_code}`
         : 'Network incident';
   };
-  const showResults = () =>
-    document
-      .getElementById('incident-workspace')
-      ?.scrollIntoView({
-        behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth',
-        block: 'start',
-      });
+  const showResults = () => {
+    if (active[0]) setSelectedId(selectedId ?? active[0].id);
+  };
+  if (responseMode)
+    return (
+      <div className="response-page">
+        <nav className="response-nav" aria-label="Incident navigation">
+          <button className="button secondary" onClick={() => setParams({})}>
+            ← Back to scenarios
+          </button>
+          <label>
+            Viewing incident
+            <select
+              value={selected?.id ?? ''}
+              onChange={(e) => {
+                setCreated(null);
+                setSelectedId(e.target.value);
+              }}
+            >
+              {(disruptions.data ?? (created ? [created] : [])).map((d) => (
+                <option key={d.id} value={d.id}>
+                  {location(d)} · {humanize(d.type)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Link className="button secondary" to="/help">
+            How does this work?
+          </Link>
+        </nav>
+        {disruptions.isError ? (
+          <ErrorState error={disruptions.error} />
+        ) : !selected && disruptions.isLoading ? (
+          <LoadingState label="Opening incident" />
+        ) : (
+          <IncidentWorkspace key={selected?.id} incident={selected} location={location(selected)} />
+        )}
+      </div>
+    );
   return (
     <div className="dashboard-grid">
       <section className="welcome wide-panel">
@@ -55,7 +93,7 @@ export function DashboardPage() {
           <a className="button primary" href="#simulator">
             Start a simulation <ArrowDown size={16} />
           </a>
-          <button className="button secondary" onClick={showResults}>
+          <button className="button secondary" disabled={!active.length} onClick={showResults}>
             Explore an existing incident
           </button>
         </div>
@@ -112,7 +150,6 @@ export function DashboardPage() {
             onCreated={(d) => {
               setCreated(d);
               setSelectedId(d.id);
-              setTimeout(showResults, 100);
             }}
           />
         </Panel>
@@ -121,6 +158,16 @@ export function DashboardPage() {
         title="Select an incident to investigate"
         eyebrow="Each event has its own analysis and results"
         className="wide-panel"
+        action={
+          <label className="search">
+            <input
+              aria-label="Find an incident"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search location or event…"
+            />
+          </label>
+        }
       >
         {disruptions.isError ? (
           <ErrorState error={disruptions.error} />
@@ -128,31 +175,35 @@ export function DashboardPage() {
           <LoadingState />
         ) : active.length ? (
           <div className="disruption-strip">
-            {active.map((d) => (
-              <button
-                aria-pressed={d.id === selectedId}
-                key={d.id}
-                className={`disruption-card ${d.id === selectedId ? 'selected' : ''}`}
-                onClick={() => {
-                  setSelectedId(d.id);
-                  setCreated(null);
-                }}
-              >
-                <span className="severity-rail" data-severity={d.severity} />
-                <span>
-                  <b>{location(d)}</b>
-                  <small>
-                    {humanize(d.type)} · {humanize(d.severity)}
-                  </small>
-                  <small>
-                    {d.analysis_status === 'COMPLETED'
-                      ? 'Analysis ready · incident open'
-                      : 'Analysis pending'}
-                  </small>
-                </span>
-                <ArrowRight size={18} />
-              </button>
-            ))}
+            {active
+              .filter((d) =>
+                `${location(d)} ${humanize(d.type)}`.toLowerCase().includes(search.toLowerCase()),
+              )
+              .map((d) => (
+                <button
+                  aria-pressed={d.id === selectedId}
+                  key={d.id}
+                  className={`disruption-card ${d.id === selectedId ? 'selected' : ''}`}
+                  onClick={() => {
+                    setSelectedId(d.id);
+                    setCreated(null);
+                  }}
+                >
+                  <span className="severity-rail" data-severity={d.severity} />
+                  <span>
+                    <b>{location(d)}</b>
+                    <small>
+                      {humanize(d.type)} · {humanize(d.severity)}
+                    </small>
+                    <small>
+                      {d.analysis_status === 'COMPLETED'
+                        ? 'Analysis ready · incident open'
+                        : 'Analysis pending'}
+                    </small>
+                  </span>
+                  <ArrowRight size={18} />
+                </button>
+              ))}
           </div>
         ) : (
           <EmptyState
@@ -161,7 +212,6 @@ export function DashboardPage() {
           />
         )}
       </Panel>
-      <IncidentWorkspace incident={selected} location={location(selected)} />
     </div>
   );
 }
