@@ -4,6 +4,12 @@ export class AnalysisService {
   constructor(pool, graph) {
     this.pool = pool;
     this.graph = graph;
+    this.progress = new Map();
+  }
+  report(id, stage, detail) {
+    this.progress.delete(id);
+    this.progress.set(id, { stage, detail, updated_at: new Date().toISOString() });
+    if (this.progress.size > 200) this.progress.delete(this.progress.keys().next().value);
   }
   async refreshGraph() {
     const client = await this.pool.connect();
@@ -16,7 +22,7 @@ export class AnalysisService {
   async analyze(id) {
     const client = await this.pool.connect();
     try {
-      return await transaction(client, async () => {
+      const result = await transaction(client, async () => {
         const {
           rows: [d],
         } = await client.query('select * from railway_main.disruptions where id=$1 for update', [id]);
@@ -29,12 +35,19 @@ export class AnalysisService {
           "update railway_main.disruptions set status='ANALYZING',analysis_status='PROCESSING' where id=$1",
           [id],
         );
+        this.report(id, 'network', 'Refreshing the railway routing network from PostgreSQL.');
         await this.graph.sync(client);
+        this.report(id, 'impact', 'Checking remaining journeys for affected stations and track segments.');
         const { rows: affected } = await client.query('select * from railway_main.fn_affected_journeys($1)', [
           id,
         ]);
         let recommendations = 0;
         for (const journey of affected) {
+          this.report(
+            id,
+            'routing',
+            `Searching alternate paths for journey ${affected.indexOf(journey) + 1} of ${affected.length}.`,
+          );
           await client.query('call railway_main.sp_record_affected_train($1,$2,$3,0)', [
             id,
             journey.train_journey_id,
@@ -45,6 +58,11 @@ export class AnalysisService {
           // Persist the best feasible candidate; graph cost is a suggestion only.
           let stored = false;
           for (const candidate of candidates) {
+            this.report(
+              id,
+              'validation',
+              'Checking candidate track availability and travel times in PostgreSQL.',
+            );
             const {
               rows: [metrics],
             } = await client.query('select * from railway_main.fn_validate_route($1::jsonb)', [
@@ -92,6 +110,7 @@ export class AnalysisService {
             );
         }
         await client.query('call railway_main.sp_mark_disruption_analyzed($1)', [id]);
+        this.report(id, 'saving', 'Saving affected journeys, route proposals and event history together.');
         return {
           disruption_id: id,
           analysis_status: 'COMPLETED',
@@ -99,6 +118,15 @@ export class AnalysisService {
           recommendations,
         };
       });
+      this.report(id, 'complete', 'Analysis committed. Results are ready to review.');
+      return result;
+    } catch (error) {
+      this.report(
+        id,
+        'retry',
+        'Analysis could not finish. The worker will retry eligible events; inspect event activity for the outcome.',
+      );
+      throw error;
     } finally {
       client.release();
     }

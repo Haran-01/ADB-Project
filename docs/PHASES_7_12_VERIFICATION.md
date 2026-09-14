@@ -30,9 +30,9 @@ The SQL fixture uses the actual PostgreSQL engine through PGlite with its experi
 
 Aura tests use the supplied cloud instance and a unique `railway-test-*` projection. That projection is derived only from the isolated PostgreSQL fixture and removed in test cleanup; it is not the production `railway-main` projection. The end-to-end test delivers real PostgreSQL notifications through PGlite's listener interface, runs the actual worker and Aura queries, persists recommendations in the fixture, and delivers events to a real Socket.IO client. Dedicated PostgreSQL TCP LISTEN reconnection and multi-client contention still require verification against reachable Supabase.
 
-Supabase deployment is pending: the supplied direct endpoint resolves to IPv6, which the current machine cannot reach (`ENETUNREACH`). No Supabase migration, seed reset, or runtime change has been applied during this work. The exact IPv4 session-pooler connection string was requested. Once configured, run `npm run migrate`, `npm run logic:apply`, `npm run verify:schema`, and the rollback-only validation against the existing demo data, followed by `npm run graph:sync` and the API health checks. Do not reseed existing cloud data unless a deliberate demo reset is wanted.
+Supabase deployment is complete through migration 007. The project uses the IPv4 session pooler on port 5432; PostgreSQL, Neo4j, and application health endpoints return 200. The production Aura projection contains 25 stations and 60 directed tracks. Live validation now runs invariant checks only, while `npm run validate:fixture` retains exact seed assertions for isolated/fresh demo databases.
 
-The implementation and isolated/Aura verification are complete through Phase 12. Full deployment verification is not marked complete until the Supabase connection and cross-service run are confirmed. Existing historical Phase 3–6 reports are retained as historical evidence; they are not presented as results of this run.
+The implementation, Supabase deployment, and Aura verification are complete through Phase 12. Existing historical Phase 3–6 reports are retained as historical evidence.
 
 ## Reproduce
 

@@ -1,6 +1,7 @@
 -- Phase 5 validation checks.
 -- Blocks are executed by scripts/run-validation.mjs.
 
+-- @scope fixture
 -- @check table_counts
 select
   'table_counts' as check_name,
@@ -42,6 +43,7 @@ select
   then 'PASS' else 'FAIL' end as status;
 -- @end
 
+-- @scope invariant
 -- @check foreign_key_spot_checks
 select
   'foreign_key_spot_checks' as check_name,
@@ -153,6 +155,7 @@ select
 from missing;
 -- @end
 
+-- @scope fixture
 -- @check history_tables_populated
 select
   'history_tables_populated' as check_name,
@@ -171,6 +174,7 @@ select
   then 'PASS' else 'FAIL' end as status;
 -- @end
 
+-- @scope fixture
 -- @check postgis_geometry_presence
 select
   'postgis_geometry_presence' as check_name,
@@ -187,6 +191,7 @@ select
   then 'PASS' else 'FAIL' end as status;
 -- @end
 
+-- @scope invariant
 -- @check postgis_nearby_station_query
 with target as (
   select geom

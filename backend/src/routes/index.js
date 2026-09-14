@@ -33,6 +33,19 @@ export function apiRoutes({ pool, graph, analysis }) {
   router.use('/network', networkRoutes(pool));
   router.get('/disruptions', listModel(pool, 'disruptions', 'created_at desc,id'));
   router.get('/events', listModel(pool, 'event_log', 'event_sequence desc'));
+  router.get('/disruptions/:id/progress', async (req, res) => {
+    const id = idSchema.parse(req.params.id);
+    const {
+      rows: [disruption],
+    } = await pool.query('select * from railway_main.disruptions where id=$1', [id]);
+    if (!disruption) return res.status(404).json({ error: 'Disruption not found' });
+    const { rows: events } = await pool.query(
+      `select id,event_type,status,attempts,created_at,event_sequence,payload from railway_main.event_log
+      where entity_id=$1 or payload->>'disruption_id'=$1::text order by event_sequence desc limit 50`,
+      [id],
+    );
+    res.json({ data: { disruption, progress: analysis.progress?.get(id) ?? null, events } });
+  });
   router.post('/disruptions', async (req, res) =>
     res.status(201).json({ data: await createDisruption(pool, disruptionSchema.parse(req.body)) }),
   );

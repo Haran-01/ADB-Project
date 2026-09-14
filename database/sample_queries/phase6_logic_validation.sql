@@ -1,5 +1,6 @@
 -- Phase 6 SQL business logic validation.
 -- Blocks are executed by scripts/run-validation.mjs.
+-- @scope fixture
 
 -- @check phase6_expected_views_present
 with required(view_name) as (

@@ -5,6 +5,9 @@ import { validate } from '../scripts/run-validation.mjs';
 import { transaction } from '../scripts/lib/database.mjs';
 import { seed } from '../scripts/run-seeds.mjs';
 import { applyLogic } from '../scripts/apply-db-logic.mjs';
+import { applyDistributedDemo } from '../scripts/run-distributed-demo.mjs';
+import { importPublicDataset, normalizeCode } from '../scripts/import-public-data.mjs';
+import { readFileSync } from 'node:fs';
 
 test('fresh PostgreSQL/PostGIS migrations, seed, SQL checks and repeatable application', async (t) => {
   const { client, db } = await testDatabase();
@@ -131,4 +134,46 @@ test('fresh PostgreSQL/PostGIS migrations, seed, SQL checks and repeatable appli
       { rollback: true },
     ),
   );
+  await t.test('regional views expose a repeatable cross-region disruption scenario', async () => {
+    const first = await applyDistributedDemo(client);
+    const second = await applyDistributedDemo(client);
+    assert.ok(first.journeys >= 1);
+    assert.deepEqual(second, first);
+    const {
+      rows: [journey],
+    } = await client.query("select * from railway_main.v_cross_region_journeys where train_number='12951'");
+    assert.deepEqual(journey.region_codes, ['CR', 'NR', 'SR']);
+    const {
+      rows: [impact],
+    } = await client.query(`select count(*)::int n from railway_main.fn_affected_journeys(
+      (select id from railway_main.disruptions where reported_by='phase-15-demo'))`);
+    assert.equal(impact.n, 1);
+  });
+  await t.test('public import normalizes, rejects bad rows and is checksum-idempotent', async () => {
+    const fixture = JSON.parse(readFileSync(new URL('./fixtures/public-import.json', import.meta.url)));
+    fixture.stations.push({ sourceId: 'bad', code: '', name: 'Bad', latitude: 999, longitude: 0 });
+    const first = await importPublicDataset(client, fixture);
+    const second = await importPublicDataset(client, fixture);
+    assert.equal(first.stations_imported, 3);
+    assert.equal(first.tracks_imported, 4);
+    assert.equal(first.trains_imported, 1);
+    assert.equal(second.reused, true);
+    assert.equal(normalizeCode(' pub-101 '), 'PUB101');
+    assert.equal(
+      (
+        await client.query('select count(*)::int n from railway_main.import_rejections where batch_id=$1', [
+          first.id,
+        ])
+      ).rows[0].n,
+      1,
+    );
+    assert.equal(
+      (
+        await client.query(
+          "select count(*)::int n from railway_main.train_schedules s join railway_main.trains t on t.id=s.train_id where t.train_number='PUB101'",
+        )
+      ).rows[0].n,
+      3,
+    );
+  });
 });

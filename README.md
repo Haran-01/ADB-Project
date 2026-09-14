@@ -16,7 +16,7 @@ The system will monitor a railway network, detect or simulate disruptions, ident
 
 ## Stack
 
-- Frontend (Phase 13 onward): React, Vite, Tailwind CSS or CSS.
+- Frontend: React, Vite, TanStack Query, React Router, Leaflet, Recharts, and CSS.
 - Backend: Node.js, Express.js.
 - Real-time updates: Socket.IO.
 - Main database: PostgreSQL.
@@ -28,7 +28,7 @@ The system will monitor a railway network, detect or simulate disruptions, ident
 
 ```text
 backend/                    Express API, SQL/Neo4j analysis orchestration, Socket.IO worker
-frontend/                   React dashboard, added after APIs are stable
+frontend/                   React operations dashboard and feature screens
 database/
   migrations/               PostgreSQL/PostGIS schema migrations
   seeds/                    Realistic seed data
@@ -45,9 +45,9 @@ scripts/                    Setup, validation, sync, and import scripts
 
 ## Current Phase
 
-Phases 0–6 were implemented previously. This revision implements the requested corrections and Phases 7–12: active triggers/outbox, PostGIS analysis, Neo4j projection, Express APIs, analysis orchestration, and a realtime worker. Frontend Phases 13–14 have not started.
+Phases 0–17 are complete. The project now includes the active database/outbox, PostGIS analysis, Neo4j routing projection, stable API and realtime worker, React operations dashboard, regional distribution demonstration, repeatable public-data importer, automated tests, final demo scenarios, documentation, and screenshots.
 
-See [phase verification](docs/PHASES_7_12_VERIFICATION.md) for executed checks and the distinction between isolated tests, Aura verification, and Supabase deployment. `docs/PHASED_BUILD_PLAN.md` is the authoritative phase numbering.
+See [Phases 7–12 verification](docs/PHASES_7_12_VERIFICATION.md) and [Phases 13–17 verification](docs/PHASES_13_17_VERIFICATION.md). `docs/PHASED_BUILD_PLAN.md` is the authoritative numbering.
 
 ## Architecture Rule
 
@@ -81,10 +81,12 @@ npm run verify:seed
 
 ## Database Validation
 
-Phase 5 runs dedicated SQL validation checks and generates a report.
+Validation is separated by intent. Live validation checks durable invariants without assuming untouched seed counts. Fixture validation checks exact counts in a freshly reset demo database. Scenario validation performs mutations inside a transaction that is always rolled back.
 
 ```bash
 npm run validate:db
+npm run validate:fixture
+npm run validate:scenario
 ```
 
 ## SQL Business Logic
@@ -96,14 +98,13 @@ npm run logic:apply
 npm run validate:db
 ```
 
-## First MVP Target
+## Implemented MVP
 
-- 1 railway region.
-- 25-50 stations.
-- 40-80 tracks.
-- 10-20 trains.
-- 1-3 disruption scenarios.
-- End-to-end flow from track failure to alternate route recommendation.
+- Three logical regions with a cross-region journey.
+- A deterministic 25-station fallback seed plus attributed public-data augmentation.
+- 64 directed track relationships and 13 active demo journeys in the current cloud dataset.
+- Track failure, station closure, and maintenance scenarios.
+- End-to-end flow from disruption to affected journey, validated alternate route, live UI, and guarded application.
 
 ## Run the backend
 
@@ -111,7 +112,8 @@ npm run validate:db
 2. Use a direct or **session-pooled** PostgreSQL connection for migrations and `DATABASE_LISTEN_URL`. Supabase direct hosts may require IPv6; session poolers support IPv4. Transaction poolers do not support persistent `LISTEN` sessions.
 3. Run the migration and logic commands above. Seeding **deletes the railway demo dataset**, so only use `--reset-demo` on a dedicated demo database.
 4. Run `npm run graph:sync`, then `npm start`.
-5. Visit `/api/health`, `/api/health/db`, and `/api/health/neo4j` on `http://127.0.0.1:4000`.
+5. In a second terminal run `npm --prefix frontend ci` and `npm run frontend:dev`.
+6. Open `http://localhost:5173`; health endpoints are under `http://127.0.0.1:4000/api/health`.
 
 The backend defaults to loopback only. Configure `API_TOKEN` for shared access; production and non-loopback binding require it. Clients send `Authorization: Bearer <token>` and Socket.IO `auth: { token }`. Use a restricted login with membership in `railway_app` for runtime, and the schema owner for migrations.
 
@@ -124,12 +126,16 @@ npm test                         # isolated PostgreSQL/PostGIS, API and Socket.I
 npm run test:cloud               # temporary isolated Aura projection, cleaned up afterward
 npm run graph:verify             # sync real PostgreSQL source, verify demo alternate routes
 npm run validate:db              # rollback-only checks; no report file changes
+npm run validate:fixture         # exact checks for a freshly reset demo fixture
+npm run validate:scenario        # mutation checks inside an always-rolled-back transaction
 npm run validate:db -- --report  # explicitly regenerate the validation report
+npm run frontend:test            # React state/API tests
+npm run frontend:build           # production frontend build
 ```
 
-Tests use PGlite's PostgreSQL engine and experimental PostGIS extension as an isolated fixture; they do not truncate Supabase. The cloud test adds real Aura graph queries. Database validation includes seed-specific expectations and should run against a fresh demo dataset; it is not an operational health check.
+Tests use PGlite's PostgreSQL engine and experimental PostGIS extension as an isolated fixture; they do not truncate Supabase. The opt-in cloud test adds real Aura graph queries. Exact seed expectations are limited to fixture validation, so ordinary `validate:db` remains suitable for an evolving operational database.
 
-See [API reference](docs/API.md), [worker behavior](docs/REALTIME.md), and [database/spatial/graph design](database/docs/PHASES_7_9_DESIGN.md).
+See the [setup guide](docs/SETUP.md), [architecture](docs/ARCHITECTURE.md), [concept mapping](docs/CONCEPT_MAPPING.md), [demo workflow](docs/DEMO_WORKFLOW.md), [API reference](docs/API.md), and [worker behavior](docs/REALTIME.md).
 
 ## Development Roadmap
 
