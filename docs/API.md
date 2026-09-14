@@ -15,6 +15,7 @@ Base URL: `http://127.0.0.1:4000/api`. With `API_TOKEN` configured, every endpoi
 | GET | `/trains/:id/schedule` | Ordered SQL schedule function |
 | GET | `/journeys/active` | Active journey reporting view |
 | GET | `/disruptions` | Disruptions including physical and analysis status |
+| GET | `/disruptions/:id/progress` | Committed disruption, related events, and advisory stage from the running analysis process |
 | POST | `/disruptions` | Create disruption; track failure also fails track; station closure also closes station |
 | GET | `/disruptions/:id/affected-trains` | Persisted affected journeys |
 | GET | `/disruptions/:id/recommendations` | Persisted route proposals |

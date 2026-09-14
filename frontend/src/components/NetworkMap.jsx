@@ -1,6 +1,7 @@
 import { GeoJSON, MapContainer, ZoomControl } from 'react-leaflet';
 import L from 'leaflet';
 import { EmptyState, ErrorState, LoadingState } from './UI.jsx';
+import { useMap } from 'react-leaflet';
 
 const bounds = [
   [7.6, 76.3],
@@ -29,7 +30,28 @@ function onEachFeature(feature, layer) {
   const text = document.createElement('span');
   text.textContent =
     p.kind === 'station' ? `${p.station_code} · ${p.name}` : `${p.status} · ${p.distance_km} km`;
-  layer.bindTooltip(text, { sticky: true, className: 'map-tooltip' });
+  const labelStation = ['MAS', 'CGL', 'VM', 'SA', 'TPJ', 'MDU', 'NCJ', 'SBC', 'CBE', 'BPL', 'NDLS'].includes(
+    p.station_code,
+  );
+  layer.bindTooltip(text, {
+    sticky: !labelStation,
+    permanent: labelStation,
+    direction: 'right',
+    className: labelStation ? 'station-label' : 'map-tooltip',
+  });
+  if (labelStation) {
+    const fullName = text.textContent;
+    text.textContent = p.station_code;
+    layer.on('mouseover', () => {
+      text.textContent = fullName;
+    });
+    layer.on('mouseout', () => {
+      text.textContent = p.station_code;
+    });
+    const popup = document.createElement('span');
+    popup.textContent = fullName;
+    layer.bindPopup(popup);
+  }
 }
 export function NetworkMap({ query }) {
   if (query.isLoading) return <LoadingState label="Drawing railway network" />;
@@ -38,6 +60,7 @@ export function NetworkMap({ query }) {
   return (
     <MapContainer className="network-map" bounds={bounds} zoomControl={false} attributionControl={false}>
       <ZoomControl position="bottomright" />
+      <MapControls data={query.data} />
       <GeoJSON
         key={query.data.features.map((f) => `${f.id}:${f.properties.status}`).join('|')}
         data={query.data}
@@ -46,5 +69,23 @@ export function NetworkMap({ query }) {
         onEachFeature={onEachFeature}
       />
     </MapContainer>
+  );
+}
+function MapControls({ data }) {
+  const map = useMap();
+  return (
+    <div className="map-tools">
+      <button onClick={() => map.fitBounds(bounds)}>Southern region</button>
+      <button
+        onClick={() => {
+          const points = data.features
+            .filter((f) => f.geometry?.type === 'Point')
+            .map((f) => [f.geometry.coordinates[1], f.geometry.coordinates[0]]);
+          if (points.length) map.fitBounds(points, { padding: [35, 35] });
+        }}
+      >
+        Full network
+      </button>
+    </div>
   );
 }

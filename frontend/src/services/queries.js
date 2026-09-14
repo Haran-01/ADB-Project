@@ -26,7 +26,8 @@ export const useProgress = (id) =>
     queryKey: ['progress', id],
     queryFn: () => api.progress(id),
     enabled: Boolean(id),
-    refetchInterval: 1500,
+    refetchInterval: (query) =>
+      query.state.data?.disruption?.analysis_status === 'COMPLETED' ? 15000 : 1500,
   });
 export const useEvents = () => useQuery({ queryKey: keys.events, queryFn: api.events });
 export const useNetworkMap = () => useQuery({ queryKey: keys.map, queryFn: api.map });

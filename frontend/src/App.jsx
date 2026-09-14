@@ -16,6 +16,7 @@ const TrainsPage = lazy(() =>
 const HistoryPage = lazy(() =>
   import('./pages/HistoryPage.jsx').then((module) => ({ default: module.HistoryPage })),
 );
+const HelpPage = lazy(() => import('./pages/HelpPage.jsx'));
 
 export function App() {
   return (
@@ -27,6 +28,7 @@ export function App() {
             <Route path="disruptions" element={<DisruptionsPage />} />
             <Route path="trains" element={<TrainsPage />} />
             <Route path="history" element={<HistoryPage />} />
+            <Route path="help" element={<HelpPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

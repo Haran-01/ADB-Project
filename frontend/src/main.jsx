@@ -5,6 +5,7 @@ import { BrowserRouter } from 'react-router-dom';
 import 'leaflet/dist/leaflet.css';
 import './styles.css';
 import './experience.css';
+import './navigation.css';
 import { queryClient } from './services/query-client.js';
 import { App } from './App.jsx';
 

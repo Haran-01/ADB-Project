@@ -1,91 +1,103 @@
-import { useMemo, useState } from 'react';
-import { DisruptionSimulator } from '../components/DisruptionSimulator.jsx';
-import { IncidentWorkspace } from '../components/IncidentWorkspace.jsx';
-import { EmptyState, ErrorState, LoadingState, Panel, StatusPill, formatTime } from '../components/UI.jsx';
-import {
-  useAffected,
-  useDisruptions,
-  useRecommendations,
-  useStations,
-  useTracks,
-} from '../services/queries.js';
-
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useDisruptions, useTracks, useStations } from '../services/queries.js';
+import { Panel, ErrorState, LoadingState, EmptyState, formatTime } from '../components/UI.jsx';
+import { humanize } from '../components/IncidentWorkspace.jsx';
 export function DisruptionsPage() {
   const disruptions = useDisruptions(),
     tracks = useTracks(),
     stations = useStations();
-  const [selected, setSelected] = useState(null);
-  const selectedId = selected ?? disruptions.data?.[0]?.id;
-  const affected = useAffected(selectedId),
-    recommendations = useRecommendations(selectedId);
-  const current = useMemo(
-    () => disruptions.data?.find((d) => d.id === selectedId),
-    [disruptions.data, selectedId],
+  const [filter, setFilter] = useState('all'),
+    [search, setSearch] = useState('');
+  const location = (d) => {
+    const t = tracks.data?.find((t) => t.track_id === d.track_id),
+      s = stations.data?.find((s) => s.id === d.station_id);
+    return s
+      ? `${s.name} (${s.station_code})`
+      : t
+        ? `${t.from_station_code} → ${t.to_station_code}`
+        : 'Network incident';
+  };
+  const data = (disruptions.data ?? []).filter(
+    (d) =>
+      (filter === 'all' ||
+        (filter === 'open'
+          ? ['OPEN', 'ANALYZING'].includes(d.status)
+          : ['RESOLVED', 'CANCELLED'].includes(d.status))) &&
+      `${location(d)} ${d.description ?? ''} ${humanize(d.type)}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
   );
   return (
-    <div className="page-grid two-column">
-      <Panel title="Create an event" eyebrow="Operator controls">
-        <DisruptionSimulator
-          tracks={tracks.data}
-          stations={stations.data}
-          onCreated={(d) => setSelected(d.id)}
-        />
-      </Panel>
-      <Panel title="Disruption register" eyebrow="Physical and analysis state" className="span-tall">
+    <>
+      <div className="page-intro">
+        <span className="eyebrow">Incident register</span>
+        <h2>Find an event. Follow its response.</h2>
+        <p>
+          Open an incident to see its analysis, affected trains and diversion options. Closed events stay here
+          as a record.
+        </p>
+        <Link to="/#simulator" className="button primary">
+          + Simulate a new event
+        </Link>
+      </div>
+      <Panel
+        title="Railway incidents"
+        action={
+          <div className="register-controls">
+            <input
+              aria-label="Search incidents"
+              placeholder="Search station, track or note…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            <select aria-label="Incident status" value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="all">All incidents</option>
+              <option value="open">Open incidents</option>
+              <option value="closed">Closed incidents</option>
+            </select>
+          </div>
+        }
+      >
         {disruptions.isLoading ? (
           <LoadingState />
         ) : disruptions.isError ? (
           <ErrorState error={disruptions.error} />
-        ) : (
-          <div className="record-list">
-            {disruptions.data?.map((d) => (
-              <button
-                className={d.id === selectedId ? 'selected' : ''}
-                key={d.id}
-                onClick={() => setSelected(d.id)}
-              >
-                <span className="severity-rail" data-severity={d.severity} />
+        ) : data.length ? (
+          <div className="incident-register">
+            {data.map((d) => (
+              <Link className="incident-row" key={d.id} to={`/?view=response&incident=${d.id}`}>
                 <div>
-                  <b>{String(d.type).replaceAll('_', ' ')}</b>
-                  <small>
-                    {d.description || 'No operator note'} · {formatTime(d.started_at)}
-                  </small>
+                  <span className="eyebrow">
+                    {humanize(d.type)} · {humanize(d.severity)}
+                  </span>
+                  <h3>{location(d)}</h3>
+                  <p>{d.description || 'No operator note'}</p>
+                  <small>{formatTime(d.started_at)}</small>
                 </div>
-                <StatusPill value={d.status} />
-                <StatusPill value={d.analysis_status} />
-              </button>
+                <div>
+                  <span className="incident-state">
+                    {['OPEN', 'ANALYZING'].includes(d.status) ? 'Open incident' : humanize(d.status)}
+                  </span>
+                  <p>
+                    {d.analysis_status === 'COMPLETED'
+                      ? 'Analysis ready'
+                      : ['RESOLVED', 'CANCELLED'].includes(d.status)
+                        ? 'Closed · no analysis running'
+                        : 'Analysis pending'}
+                  </p>
+                  <b>View response →</b>
+                </div>
+              </Link>
             ))}
           </div>
+        ) : (
+          <EmptyState
+            title="No matching incidents"
+            message="Try a different search or change the status filter."
+          />
         )}
       </Panel>
-      <IncidentWorkspace
-        incident={current}
-        location={
-          stations.data?.find((s) => s.id === current?.station_id)?.name ??
-          (() => {
-            const t = tracks.data?.find((t) => t.track_id === current?.track_id);
-            return t ? `${t.from_station_code} → ${t.to_station_code}` : 'Selected incident';
-          })()
-        }
-      />
-    </div>
-  );
-}
-function CompactRecords({ query, empty, children }) {
-  if (query.isLoading) return <LoadingState />;
-  if (query.isError) return <ErrorState error={query.error} />;
-  if (!query.data?.length) return <EmptyState title={empty} />;
-  return (
-    <div className="compact-records">
-      <header>{children}</header>
-      {query.data.map((r) => (
-        <article key={r.id}>
-          <span>{r.recommended_route?.join(' → ') ?? String(r.impact_type).replaceAll('_', ' ')}</span>
-          <span>
-            {r.recommended_route ? <StatusPill value={r.status} /> : r.estimated_delay_minutes + ' min'}
-          </span>
-        </article>
-      ))}
-    </div>
+    </>
   );
 }
