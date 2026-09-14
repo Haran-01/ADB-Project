@@ -76,8 +76,8 @@ with target as (
 select
   'phase6_track_availability_function' as check_name,
   jsonb_build_object('is_available', bool_or(a.is_available), 'status', max(a.status::text)) as actual,
-  'CGL -> VM demo track should currently be available before Phase 7 trigger simulation' as expected,
-  case when bool_or(a.is_available) then 'PASS' else 'FAIL' end as status
+  'CGL -> VM is unavailable while its seeded disruption remains unresolved' as expected,
+  case when not bool_or(a.is_available) then 'PASS' else 'FAIL' end as status
 from target t
 cross join lateral railway_main.fn_get_active_track_availability(t.id, now()) a;
 -- @end
@@ -146,7 +146,7 @@ select
   'function should find trains 12635 and 16127 using CGL -> VM' as expected,
   case when count(*) = 2 then 'PASS' else 'FAIL' end as status
 from target t
-cross join lateral railway_main.fn_find_trains_using_track(t.id, current_date);
+cross join lateral railway_main.fn_find_trains_using_track(t.id, (select max(journey_date) from railway_main.train_journeys));
 -- @end
 
 -- @check phase6_procedure_record_affected_train

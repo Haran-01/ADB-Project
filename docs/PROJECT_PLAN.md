@@ -1,5 +1,7 @@
 # Intelligent Railway Network and Disruption Management System - Project Plan
 
+Phase numbering in this original concept document is historical. Use `PHASED_BUILD_PLAN.md` for implementation order and `PHASES_7_12_VERIFICATION.md` for current execution evidence. Phases 7–12 now have implementations; frontend work remains Phase 13 onward.
+
 ## 1. Source Understanding
 
 The attached abstract describes a database-driven railway disruption management system. Its purpose is to monitor railway operations and respond to unexpected disruptions such as track failures, accidents, maintenance activities, station closures, and route blockages.

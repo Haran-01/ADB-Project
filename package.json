@@ -9,9 +9,33 @@
     "seed": "node scripts/run-seeds.mjs",
     "verify:seed": "node scripts/verify-seed.mjs",
     "validate:db": "node scripts/run-validation.mjs",
-    "logic:apply": "node scripts/apply-db-logic.mjs"
+    "logic:apply": "node scripts/apply-db-logic.mjs",
+    "graph:sync": "node scripts/sync-neo4j.mjs",
+    "graph:verify": "node scripts/sync-neo4j.mjs --verify",
+    "start": "node backend/src/server.js",
+    "dev": "nodemon backend/src/server.js",
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "test:cloud": "RUN_CLOUD_TESTS=true node --test tests/cloud.test.mjs",
+    "test:db": "node --test tests/database.test.mjs",
+    "format": "prettier --write 'backend/src/**/*.js' 'scripts/**/*.mjs' 'tests/**/*.mjs'",
+    "format:check": "prettier --check 'backend/src/**/*.js' 'scripts/**/*.mjs' 'tests/**/*.mjs'"
   },
   "dependencies": {
-    "pg": "^8.13.1"
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "morgan": "^1.12.1",
+    "neo4j-driver": "^6.2.0",
+    "pg": "^8.23.0",
+    "socket.io": "^4.8.3",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
+    "@electric-sql/pglite-postgis": "^0.2.8",
+    "nodemon": "^3.1.14",
+    "prettier": "^3.9.6",
+    "socket.io-client": "^4.8.3",
+    "supertest": "^7.2.2"
   }
 }

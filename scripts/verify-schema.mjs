@@ -1,41 +1,12 @@
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import pg from 'pg';
-
-const { Client } = pg;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
-const envPath = path.join(projectRoot, 'backend', '.env');
-
-function loadEnv(filePath) {
-  if (!existsSync(filePath)) {
-    throw new Error(`Missing env file: ${filePath}`);
-  }
-
-  const env = {};
-  const lines = readFileSync(filePath, 'utf8').split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-    const index = trimmed.indexOf('=');
-    env[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, '');
-  }
-  return env;
-}
+import { connect } from './lib/database.mjs';
 
 async function run() {
-  const env = loadEnv(envPath);
-  const client = new Client({
-    connectionString: env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
-
-  await client.connect();
+  const client = await connect();
   try {
     const postgis = await client.query('select postgis_full_version() as version');
-    const migrations = await client.query('select count(*)::int as count from railway_main.schema_migrations');
+    const migrations = await client.query(
+      'select count(*)::int as count from railway_main.schema_migrations',
+    );
     const tables = await client.query(`
       select table_name
       from information_schema.tables
@@ -65,6 +36,13 @@ async function run() {
         and constraint_type in ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE', 'CHECK')
     `);
 
+    if (
+      migrations.rows[0].count < 7 ||
+      tables.rows.length < 17 ||
+      enums.rows.length !== 13 ||
+      spatialColumns.rows.length !== 3
+    )
+      process.exitCode = 1;
     console.log('PostGIS: available');
     console.log(`PostGIS version string length: ${postgis.rows[0].version.length}`);
     console.log(`Applied migrations: ${migrations.rows[0].count}`);

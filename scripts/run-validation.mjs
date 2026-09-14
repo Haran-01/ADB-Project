@@ -1,148 +1,81 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import pg from 'pg';
+import { writeFileSync } from 'node:fs';
+import { connect, sqlFiles, transaction, projectRoot } from './lib/database.mjs';
 
-const { Client } = pg;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
-const envPath = path.join(projectRoot, 'backend', '.env');
-const validationDir = path.join(projectRoot, 'database', 'sample_queries');
-const validationFiles = readdirSync(validationDir)
-  .filter((file) => file.endsWith('.sql'))
-  .sort()
-  .map((file) => path.join(validationDir, file));
-const reportPath = path.join(projectRoot, 'database', 'docs', 'DATABASE_VALIDATION_REPORT.md');
-
-function loadEnv(filePath) {
-  if (!existsSync(filePath)) {
-    throw new Error(`Missing env file: ${filePath}`);
-  }
-  const env = {};
-  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-    const index = trimmed.indexOf('=');
-    env[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, '');
-  }
-  return env;
-}
-
-function extractChecks(filePath) {
-  const content = readFileSync(filePath, 'utf8');
-  const lines = content.split(/\r?\n/);
+export function extractChecks(sql, filename) {
   const checks = [];
-  let current = null;
-
-  for (const line of lines) {
-    const start = line.match(/^--\s*@check\s+([a-zA-Z0-9_:-]+)\s*$/);
+  let current;
+  for (const line of sql.split(/\r?\n/)) {
+    const start = line.match(/^--\s*@check\s+(\S+)\s*$/);
     if (start) {
-      if (current) throw new Error(`Nested @check in ${filePath}`);
-      current = { name: start[1], sql: [] };
-      continue;
-    }
-    if (/^--\s*@end\s*$/.test(line)) {
-      if (!current) throw new Error(`@end without @check in ${filePath}`);
-      checks.push({ ...current, file: path.relative(projectRoot, filePath) });
+      if (current) throw new Error(`Nested check in ${filename}`);
+      current = { name: start[1], filename, lines: [] };
+    } else if (/^--\s*@end\s*$/.test(line)) {
+      if (!current) throw new Error(`Unmatched end in ${filename}`);
+      checks.push({ ...current, sql: current.lines.join('\n') });
       current = null;
-      continue;
-    }
-    if (current) current.sql.push(line);
+    } else if (current) current.lines.push(line);
   }
-
-  if (current) throw new Error(`Unclosed @check ${current.name} in ${filePath}`);
-  return checks.map((check) => ({ ...check, sql: check.sql.join('\n').trim() }));
+  if (current) throw new Error(`Unclosed check in ${filename}`);
+  return checks;
 }
-
-function formatValue(value) {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value).replace(/\r?\n/g, ' ');
+export async function validate(client) {
+  const checks = sqlFiles('database/sample_queries').flatMap((f) => extractChecks(f.sql, f.filename));
+  if (!checks.length) throw new Error('No validation checks found');
+  return transaction(
+    client,
+    async () => {
+      const results = [];
+      for (const check of checks) {
+        await client.query('savepoint validation_check');
+        try {
+          const result = await client.query(check.sql);
+          await client.query('set constraints all immediate');
+          const row = (Array.isArray(result) ? result.at(-1) : result).rows[0] ?? {};
+          results.push({ name: check.name, filename: check.filename, ...row, status: row.status ?? 'FAIL' });
+        } catch (error) {
+          results.push({ name: check.name, filename: check.filename, status: 'FAIL', actual: error.message });
+        } finally {
+          await client.query('rollback to savepoint validation_check');
+          await client.query('release savepoint validation_check');
+        }
+      }
+      return results;
+    },
+    { rollback: true },
+  );
 }
-
-function escapeCell(value) {
-  return formatValue(value).replaceAll('|', '\\|');
-}
-
-async function run() {
-  const env = loadEnv(envPath);
-  const databaseUrl = env.DATABASE_URL;
-  if (!databaseUrl) throw new Error('DATABASE_URL is missing in backend/.env');
-
-  const checks = validationFiles.flatMap(extractChecks);
-  const client = new Client({
-    connectionString: databaseUrl,
-    ssl: { rejectUnauthorized: false },
-  });
-
-  await client.connect();
-  const results = [];
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const client = await connect();
+  let results;
   try {
-    for (const check of checks) {
-      const queryResult = await client.query(check.sql);
-      const result = Array.isArray(queryResult) ? queryResult.at(-1) : queryResult;
-      const row = result.rows[0] ?? {};
-      const status = row.status ?? 'UNKNOWN';
-      results.push({
-        file: check.file,
-        checkName: check.name,
-        actual: row.actual,
-        expected: row.expected,
-        status,
-      });
-      console.log(`${status} ${check.name}`);
-    }
+    results = await validate(client);
   } finally {
     await client.end();
   }
-
-  const failures = results.filter((result) => result.status !== 'PASS');
-  const generatedAt = new Date().toISOString();
-  const lines = [
-    '# Database Validation Report',
-    '',
-    `Generated at: ${generatedAt}`,
-    '',
-    'Phase 5 validates the Supabase PostgreSQL/PostGIS database before backend APIs are built.',
-    '',
-    '## Summary',
-    '',
-    `- Total checks: ${results.length}`,
-    `- Passed: ${results.length - failures.length}`,
-    `- Failed: ${failures.length}`,
-    '',
-    failures.length === 0
-      ? 'All validation checks passed.'
-      : 'Some validation checks failed. Review the detailed table below.',
-    '',
-    '## Validation Files',
-    '',
-    '- `database/sample_queries/validation.sql`',
-    '- `database/sample_queries/business_queries.sql`',
-    '- `database/sample_queries/phase6_logic_validation.sql`',
-    '',
-    '## Detailed Results',
-    '',
-    '| Check | Source | Status | Actual | Expected |',
-    '| --- | --- | --- | --- | --- |',
-    ...results.map((result) => (
-      `| \`${escapeCell(result.checkName)}\` | \`${escapeCell(result.file)}\` | ${escapeCell(result.status)} | ${escapeCell(result.actual)} | ${escapeCell(result.expected)} |`
-    )),
-    '',
-    '## Scope Notes',
-    '',
-    '- Trigger behavior is intentionally reported as not present yet because active triggers belong to Phase 7.',
-    '- Phase 6 views, functions, and procedures are now expected to exist and are validated here.',
-    '- This validation proves seeded relational joins, constraints, indexes, history rows, PostGIS queries, core business queries, and SQL-first database logic work directly in PostgreSQL.',
-    '',
-  ];
-
-  writeFileSync(reportPath, lines.join('\n'));
-  if (failures.length > 0) process.exit(1);
+  for (const row of results)
+    console.log(`${row.status} ${row.name}${row.status === 'PASS' ? '' : ': ' + JSON.stringify(row.actual)}`);
+  const failures = results.filter((r) => r.status !== 'PASS');
+  console.log(
+    `${results.length - failures.length}/${results.length} passed. All database changes rolled back.`,
+  );
+  if (process.argv.includes('--report')) {
+    const cell = (v) => JSON.stringify(v ?? '').replaceAll('|', '\\|');
+    writeFileSync(
+      `${projectRoot}/database/docs/DATABASE_VALIDATION_REPORT.md`,
+      [
+        '# Database Validation Report',
+        '',
+        `Generated: ${new Date().toISOString()}`,
+        '',
+        'Each check runs in its own savepoint; the enclosing transaction always rolls back.',
+        `Passed: ${results.length - failures.length}/${results.length}`,
+        '',
+        '| Check | Status | Actual |',
+        '| --- | --- | --- |',
+        ...results.map((r) => `| ${r.name} | ${r.status} | ${cell(r.actual)} |`),
+        '',
+      ].join('\n'),
+    );
+  }
+  if (failures.length) process.exitCode = 1;
 }
-
-run().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});

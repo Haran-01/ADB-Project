@@ -1,5 +1,22 @@
 # Data Dictionary
 
+## Phase 7–12 additions
+
+The original Phase 2 definitions below remain historical baseline. Migrations 005–007 add:
+
+| Entity | New fields / constraints |
+| --- | --- |
+| `disruptions` | `analysis_status` (PENDING, PROCESSING, COMPLETED, FAILED), `analyzed_at`; exactly one track/station target |
+| `train_journeys` | `active_route` JSONB ordered station-code array for an applied reroute |
+| `tracks` | `geometry_distance_km` generated from geodesic line length; operational `distance_km` remains separate |
+| `route_recommendations` | Composite affected-journey/disruption FK, route array checks, one APPLIED recommendation per journey |
+| `event_log` | `event_sequence` unique monotonic sequence, `attempts`, `available_at`, `locked_at`, UUID `lock_token`, `last_error` |
+| `journey_status_history` | UUID id, journey FK, old/new journey status, changed_at, changed_by, reason |
+| `logic_artifacts` | filename primary key, SHA-256 checksum, applied_at |
+| `event_type` | Adds TRAIN_AFFECTED, JOURNEY_STATUS_CHANGED, NETWORK_CHANGED |
+
+All tables enable RLS with explicit server-only policies for `railway_app`. See `PHASES_7_9_DESIGN.md` for triggers, units, integrity rules and synchronization semantics.
+
 This document defines planned tables, columns, keys, constraints, and enum values. It is the source document for Phase 3 migrations.
 
 ## Common Column Standards
@@ -354,4 +371,3 @@ Stores `train_journey_id`, old delay, new delay, reason, and `changed_at`.
 ### `disruption_history`
 
 Stores `disruption_id`, old status, new status, note, and `changed_at`.
-

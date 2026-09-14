@@ -45,7 +45,7 @@ Sync Script
   v
 Neo4j Aura
 
-Backend APIs later connect to both:
+Backend APIs connect to both:
   - Supabase PostgreSQL for authoritative data and SQL-first business logic.
   - Neo4j Aura for alternate path search.
 ```
@@ -54,7 +54,7 @@ Backend APIs later connect to both:
 
 1. Create a Supabase project.
 2. Open Project Settings -> Database and copy the connection string.
-3. Set `DATABASE_URL` in `.env`.
+3. Set `DATABASE_URL` and `DATABASE_LISTEN_URL` in `backend/.env`. Use the direct host if IPv6 is available; otherwise copy the **session pooler** string from Connect. Use port 5432 for the session pooler. Do not use a transaction pooler for LISTEN or migration session locks.
 4. Enable PostGIS.
 
 Recommended SQL:
@@ -78,12 +78,13 @@ This is the best MVP approach because it avoids cross-project networking issues 
 
 1. Create a Neo4j AuraDB instance.
 2. Copy the connection URI, username, and generated password.
-3. Set these values in `.env`:
+3. Set these values in `backend/.env`, using the exact username and database from the downloaded credentials (they may be instance-specific):
 
 ```text
 NEO4J_URI=neo4j+s://your-instance.databases.neo4j.io
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_generated_password
+NEO4J_DATABASE=your_database_name
 ```
 
 ## Environment Variables
@@ -93,20 +94,20 @@ Use `.env.example` as the template.
 Required values:
 
 ```text
-DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:6543/postgres
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+DATABASE_URL=postgresql://postgres.your-project-ref:[ENCODED_PASSWORD]@[SESSION_POOLER_HOST]:5432/postgres
+DATABASE_LISTEN_URL=postgresql://postgres.your-project-ref:[ENCODED_PASSWORD]@[SESSION_POOLER_HOST]:5432/postgres
+DATABASE_SSL_MODE=verify-full
 
 NEO4J_URI=neo4j+s://your-instance.databases.neo4j.io
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_generated_password
 ```
 
-Keep service role keys server-side only. Do not expose them in frontend code.
+The implementation connects through PostgreSQL; Supabase anon/service-role API keys are not required. Never expose database or service-role credentials in frontend code. TLS verification is enabled by default; use `DATABASE_CA_FILE` for the provider CA if necessary. Use the schema owner for migration/application scripts, then provision a separate backend login with membership in `railway_app` for runtime.
 
 ## Verification
 
-Because these are cloud services, verification is done through SQL clients, Supabase SQL editor, and later backend health checks.
+Verification is available through SQL clients, Supabase SQL editor, and `/api/health/db` and `/api/health/neo4j`. See `PHASES_7_12_VERIFICATION.md` for current evidence.
 
 ### Verify Supabase PostgreSQL
 
@@ -159,4 +160,3 @@ Docker has been removed from this project by choice. Phase 1 is complete when:
 - Neo4j Aura instance exists.
 - Neo4j connection credentials are available.
 - `.env` can be created from `.env.example`.
-
