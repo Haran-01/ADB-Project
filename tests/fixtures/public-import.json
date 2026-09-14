@@ -1,0 +1,14 @@
+{
+  "sourceName": "TEST_OPEN_DATA",
+  "sourceUrl": "https://example.test/open-data",
+  "sourceLicense": "CC0-1.0",
+  "regionCode": "SR",
+  "stations": [
+    { "sourceId": "s1", "code": "pub-1", "name": "Public Test One", "latitude": 12.1, "longitude": 78.1 },
+    { "sourceId": "s2", "code": "pub-2", "name": "Public Test Two", "latitude": 12.2, "longitude": 78.2 },
+    { "sourceId": "s3", "code": "pub-3", "name": "Public Test Three", "latitude": 12.3, "longitude": 78.3 }
+  ],
+  "routes": [
+    { "sourceId": "r1", "trainNumber": "pub-101", "name": "Public Fixture Route", "trainType": "PASSENGER", "priority": 5, "stops": ["pub-1", "pub-2", "pub-3"] }
+  ]
+}

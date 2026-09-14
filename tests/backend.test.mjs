@@ -45,6 +45,7 @@ test('API, analysis, route application and outbox integration', async (t) => {
       'disruptions',
       `disruptions/${d.id}/affected-trains`,
       `disruptions/${d.id}/recommendations`,
+      `disruptions/${d.id}/progress`,
     ])
       await api.get(`/api/${endpoint}`).set(auth).expect(200);
     await api.get('/api/stations?limit=10000').set(auth).expect(400);
@@ -59,6 +60,14 @@ test('API, analysis, route application and outbox integration', async (t) => {
     const response = await api.post(`/api/disruptions/${d.id}/analyze`).set(auth).expect(200);
     assert.equal(response.body.data.affected_trains, 1); // Vaigai already passed CGL -> VM.
     assert.equal(response.body.data.recommendations, 1);
+    const progress = await api.get(`/api/disruptions/${d.id}/progress`).set(auth).expect(200);
+    assert.equal(progress.body.data.progress.stage, 'complete');
+    assert.equal(progress.body.data.disruption.analysis_status, 'COMPLETED');
+    assert.ok(
+      progress.body.data.events.every(
+        (e) => e.payload.disruption_id === d.id || e.event_type.startsWith('DISRUPTION_'),
+      ),
+    );
     await api.post(`/api/disruptions/${d.id}/analyze`).set(auth).expect(200);
     const {
       rows: [recommendation],

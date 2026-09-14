@@ -1,5 +1,6 @@
 -- Phase 5 business validation queries.
 -- Blocks are executed by scripts/run-validation.mjs.
+-- @scope fixture
 
 -- @check active_train_journeys
 select

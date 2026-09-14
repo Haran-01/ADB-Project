@@ -4,11 +4,17 @@ import { connect, sqlFiles, transaction, projectRoot } from './lib/database.mjs'
 export function extractChecks(sql, filename) {
   const checks = [];
   let current;
+  let scope = 'invariant';
   for (const line of sql.split(/\r?\n/)) {
+    const scopeMarker = line.match(/^--\s*@scope\s+(fixture|invariant|scenario)\s*$/);
+    if (scopeMarker && !current) {
+      scope = scopeMarker[1];
+      continue;
+    }
     const start = line.match(/^--\s*@check\s+(\S+)\s*$/);
     if (start) {
       if (current) throw new Error(`Nested check in ${filename}`);
-      current = { name: start[1], filename, lines: [] };
+      current = { name: start[1], filename, scope, lines: [] };
     } else if (/^--\s*@end\s*$/.test(line)) {
       if (!current) throw new Error(`Unmatched end in ${filename}`);
       checks.push({ ...current, sql: current.lines.join('\n') });
@@ -18,8 +24,10 @@ export function extractChecks(sql, filename) {
   if (current) throw new Error(`Unclosed check in ${filename}`);
   return checks;
 }
-export async function validate(client) {
-  const checks = sqlFiles('database/sample_queries').flatMap((f) => extractChecks(f.sql, f.filename));
+export async function validate(client, { mode = 'fixture' } = {}) {
+  const checks = sqlFiles('database/sample_queries')
+    .flatMap((f) => extractChecks(f.sql, f.filename))
+    .filter((check) => check.scope === 'invariant' || check.scope === mode);
   if (!checks.length) throw new Error('No validation checks found');
   return transaction(
     client,
@@ -45,10 +53,15 @@ export async function validate(client) {
   );
 }
 if (import.meta.url === `file://${process.argv[1]}`) {
+  const mode = process.argv.includes('--fixture')
+    ? 'fixture'
+    : process.argv.includes('--scenario')
+      ? 'scenario'
+      : 'live';
   const client = await connect();
   let results;
   try {
-    results = await validate(client);
+    results = await validate(client, { mode });
   } finally {
     await client.end();
   }
@@ -56,7 +69,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     console.log(`${row.status} ${row.name}${row.status === 'PASS' ? '' : ': ' + JSON.stringify(row.actual)}`);
   const failures = results.filter((r) => r.status !== 'PASS');
   console.log(
-    `${results.length - failures.length}/${results.length} passed. All database changes rolled back.`,
+    `${results.length - failures.length}/${results.length} ${mode} checks passed. All database changes rolled back.`,
   );
   if (process.argv.includes('--report')) {
     const cell = (v) => JSON.stringify(v ?? '').replaceAll('|', '\\|');
@@ -68,11 +81,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         `Generated: ${new Date().toISOString()}`,
         '',
         'Each check runs in its own savepoint; the enclosing transaction always rolls back.',
+        `Mode: ${mode}`,
         `Passed: ${results.length - failures.length}/${results.length}`,
         '',
         '| Check | Status | Actual |',
         '| --- | --- | --- |',
-        ...results.map((r) => `| ${r.name} | ${r.status} | ${cell(r.actual)} |`),
+        ...results.map((r) => `| ${r.name} (${r.scope}) | ${r.status} | ${cell(r.actual)} |`),
         '',
       ].join('\n'),
     );
