@@ -38,7 +38,7 @@ select
     and (select count(*) from railway_main.disruptions) = 3
     and (select count(*) from railway_main.affected_trains) = 4
     and (select count(*) from railway_main.route_recommendations) = 2
-    and (select count(*) from railway_main.event_log) = 3
+    and (select count(*) from railway_main.event_log) >= 3
   then 'PASS' else 'FAIL' end as status;
 -- @end
 
@@ -224,8 +224,8 @@ from railway_main.tracks;
 select
   'active_database_trigger_status' as check_name,
   jsonb_build_object('user_triggers', count(*)) as actual,
-  '0 expected in Phase 5 because triggers are intentionally Phase 7 work' as expected,
-  case when count(*) = 0 then 'PASS' else 'FAIL' end as status
+  'Phase 7 active database triggers must be installed' as expected,
+  case when count(*) >= 10 then 'PASS' else 'FAIL' end as status
 from information_schema.triggers
 where trigger_schema = 'railway_main';
 -- @end

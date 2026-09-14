@@ -397,7 +397,8 @@ from resolved_disruptions;
 
 insert into railway_main.disruption_history (disruption_id, old_status, new_status, changed_at, changed_by, note)
 select id, null, status, started_at, reported_by, 'Initial seeded disruption state'
-from railway_main.disruptions;
+from railway_main.disruptions d
+where not exists(select 1 from railway_main.disruption_history h where h.disruption_id=d.id);
 
 insert into railway_main.event_log (event_type, entity_type, entity_id, payload, created_at, processed_at, status)
 select
@@ -408,7 +409,11 @@ select
   d.created_at,
   case when d.status = 'RESOLVED'::railway_main.disruption_status then d.created_at + interval '5 minutes' else null end,
   case when d.status = 'RESOLVED'::railway_main.disruption_status then 'PROCESSED'::railway_main.event_status else 'PENDING'::railway_main.event_status end
-from railway_main.disruptions d;
+from railway_main.disruptions d
+where not exists(select 1 from railway_main.event_log e where e.entity_id=d.id and e.event_type='DISRUPTION_CREATED');
+
+update railway_main.event_log e set status='PROCESSED',processed_at=now()
+from railway_main.disruptions d where e.entity_id=d.id and d.status='RESOLVED';
 
 with active_track_failure as (
   select d.id as disruption_id

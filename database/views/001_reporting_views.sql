@@ -100,13 +100,20 @@ select
   d.severity,
   d.status,
   d.started_at,
-  count(distinct at.id)::integer as affected_train_count,
-  coalesce(sum(at.estimated_delay_minutes), 0)::integer as total_estimated_delay_minutes,
-  count(distinct rr.id)::integer as recommendation_count,
-  count(distinct rr.id) filter (where rr.status = 'PROPOSED')::integer as proposed_recommendation_count,
-  count(distinct rr.id) filter (where rr.status = 'APPLIED')::integer as applied_recommendation_count
+  coalesce(at.affected_train_count, 0)::integer as affected_train_count,
+  coalesce(at.total_estimated_delay_minutes, 0)::integer as total_estimated_delay_minutes,
+  coalesce(rr.recommendation_count, 0)::integer as recommendation_count,
+  coalesce(rr.proposed_recommendation_count, 0)::integer as proposed_recommendation_count,
+  coalesce(rr.applied_recommendation_count, 0)::integer as applied_recommendation_count
 from railway_main.disruptions d
-left join railway_main.affected_trains at on at.disruption_id = d.id
-left join railway_main.route_recommendations rr on rr.disruption_id = d.id
-group by d.id, d.type, d.severity, d.status, d.started_at;
-
+left join (
+  select disruption_id, count(*) as affected_train_count,
+    sum(estimated_delay_minutes) as total_estimated_delay_minutes
+  from railway_main.affected_trains group by disruption_id
+) at on at.disruption_id = d.id
+left join (
+  select disruption_id, count(*) as recommendation_count,
+    count(*) filter (where status='PROPOSED') as proposed_recommendation_count,
+    count(*) filter (where status='APPLIED') as applied_recommendation_count
+  from railway_main.route_recommendations group by disruption_id
+) rr on rr.disruption_id = d.id;

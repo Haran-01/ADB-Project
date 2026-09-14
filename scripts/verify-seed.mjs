@@ -1,28 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import pg from 'pg';
-
-const { Client } = pg;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
-const envPath = path.join(projectRoot, 'backend', '.env');
-
-function loadEnv(filePath) {
-  if (!existsSync(filePath)) {
-    throw new Error(`Missing env file: ${filePath}`);
-  }
-
-  const env = {};
-  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-    const index = trimmed.indexOf('=');
-    env[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, '');
-  }
-  return env;
-}
+import { connect } from './lib/database.mjs';
 
 const checks = [
   ['regions', 1],
@@ -42,19 +18,15 @@ const checks = [
 ];
 
 async function run() {
-  const env = loadEnv(envPath);
-  const client = new Client({
-    connectionString: env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
-
-  await client.connect();
+  const client = await connect();
   try {
     for (const [table, expected] of checks) {
       const result = await client.query(`select count(*)::int as count from railway_main.${table}`);
       const actual = result.rows[0].count;
-      const status = actual === expected ? 'OK' : 'CHECK';
+      const valid = table === 'event_log' ? actual >= expected : actual === expected;
+      const status = valid ? 'OK' : 'CHECK';
       console.log(`${table}: ${actual} expected=${expected} ${status}`);
+      if (!valid) process.exitCode = 1;
     }
 
     const fkViolations = await client.query(`
@@ -78,6 +50,12 @@ async function run() {
       from railway_main.tracks
     `);
 
+    if (
+      Number(fkViolations.rows[0].count) !== 0 ||
+      geo.rows[0].station_geoms !== 25 ||
+      trackGeo.rows[0].track_geoms !== 60
+    )
+      process.exitCode = 1;
     console.log(`foreign key spot-check violations: ${fkViolations.rows[0].count}`);
     console.log(`station geometries: ${geo.rows[0].station_geoms}`);
     console.log(`track geometries: ${trackGeo.rows[0].track_geoms}`);

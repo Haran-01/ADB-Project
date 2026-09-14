@@ -169,7 +169,7 @@ select
     'processed_events', count(*) filter (where status = 'PROCESSED')
   ) as actual,
   'unresolved disruptions should leave pending event work for later workers' as expected,
-  case when count(*) filter (where status = 'PENDING') = 2
+  case when count(*) filter (where status = 'PENDING') >= 2
     and count(*) filter (where status = 'PROCESSED') = 1
   then 'PASS' else 'FAIL' end as status
 from railway_main.event_log;

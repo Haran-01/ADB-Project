@@ -1,5 +1,7 @@
 # Seed Data
 
+Run `npm run seed -- --reset-demo` only on a dedicated demo database: it truncates railway data. It is atomic and works before or after active triggers are installed. With triggers installed, additional network/analysis outbox events are expected; verification requires at least the three seeded disruption events rather than an exact total event count.
+
 Phase 4 seed data creates a repeatable Southern Railway demo network.
 
 ## Contents

@@ -1,55 +1,37 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import pg from 'pg';
+import { createHash } from 'node:crypto';
+import { connect, transaction, sqlFiles } from './lib/database.mjs';
 
-const { Client } = pg;
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const projectRoot = path.resolve(__dirname, '..');
-const envPath = path.join(projectRoot, 'backend', '.env');
-const artifactDirs = ['views', 'functions', 'procedures'].map((dir) => path.join(projectRoot, 'database', dir));
-
-function loadEnv(filePath) {
-  if (!existsSync(filePath)) throw new Error(`Missing env file: ${filePath}`);
-  const env = {};
-  for (const line of readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#') || !trimmed.includes('=')) continue;
-    const index = trimmed.indexOf('=');
-    env[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim().replace(/^["']|["']$/g, '');
-  }
-  return env;
-}
-
-async function run() {
-  const env = loadEnv(envPath);
-  if (!env.DATABASE_URL) throw new Error('DATABASE_URL is missing in backend/.env');
-
-  const client = new Client({
-    connectionString: env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-  });
-
-  await client.connect();
-  try {
-    for (const dir of artifactDirs) {
-      const files = readdirSync(dir).filter((file) => file.endsWith('.sql')).sort();
-      for (const file of files) {
-        const fullPath = path.join(dir, file);
-        const relative = path.relative(projectRoot, fullPath);
-        console.log(`Applying database logic artifact: ${relative}`);
-        await client.query(readFileSync(fullPath, 'utf8'));
+export async function applyLogic(client) {
+  await transaction(client, async () => {
+    await client.query("select pg_advisory_xact_lock(hashtext('railway:migrations'))");
+    for (const dir of ['views', 'functions', 'procedures', 'triggers']) {
+      for (const { filename, sql } of sqlFiles(`database/${dir}`)) {
+        const name = `${dir}/${filename}`;
+        const checksum = createHash('sha256').update(sql).digest('hex');
+        const previous = await client.query(
+          'select checksum from railway_main.logic_artifacts where filename=$1',
+          [name],
+        );
+        // Replay the ordered set: later files may intentionally refine earlier functions.
+        await client.query(sql);
+        if (previous.rows[0]?.checksum === checksum) continue;
+        await client.query(
+          `insert into railway_main.logic_artifacts(filename,checksum) values($1,$2)
+          on conflict(filename) do update set checksum=excluded.checksum, applied_at=now()`,
+          [name, checksum],
+        );
+        console.log(`Applied ${name}`);
       }
     }
-    console.log('Database logic artifacts applied.');
+    await client.query('revoke execute on all routines in schema railway_main from public');
+    await client.query('grant execute on all routines in schema railway_main to railway_app');
+  });
+}
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const client = await connect();
+  try {
+    await applyLogic(client);
   } finally {
     await client.end();
   }
 }
-
-run().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
-

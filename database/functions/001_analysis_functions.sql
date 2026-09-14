@@ -108,7 +108,7 @@ as $$
   from railway_main.stations s
   where s.status = 'ACTIVE'::railway_main.station_status
     and ST_DWithin(s.geom, p_point, p_radius_km * 1000)
-  order by s.geom <-> p_point;
+  order by ST_Distance(s.geom, p_point), s.station_code;
 $$;
 
 create or replace function railway_main.fn_estimate_delay_minutes(
@@ -228,4 +228,3 @@ as $$
   left join railway_main.stations ns on ns.id = tj.next_station_id
   where tj.journey_status in ('RUNNING', 'DELAYED', 'REROUTED', 'SCHEDULED');
 $$;
-

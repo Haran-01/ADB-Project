@@ -1,5 +1,7 @@
 # ER Diagram
 
+Phase 7 adds `train_journeys 1 -> many journey_status_history`, a composite `affected_trains(disruption_id,train_journey_id) 1 -> many route_recommendations` relationship, and `logic_artifacts` deployment metadata. Existing diagrams below describe the original Phase 2 baseline; current additions are listed in `DATA_DICTIONARY.md` and `PHASES_7_9_DESIGN.md`.
+
 This document defines the conceptual entity model for the railway disruption database. It is design documentation only; migration SQL belongs in Phase 3.
 
 ## Schema Scope
@@ -187,4 +189,3 @@ erDiagram
 - `disruptions` supports both track-level and station-level disruptions. At least one of `track_id` or `station_id` must be present.
 - `route_recommendations` stores JSON route snapshots because each recommendation is an analysis result, not a normalized master route.
 - History tables are append-only audit tables and are intentionally separated from current-state tables.
-
