@@ -1,6 +1,12 @@
 -- Phase 6 views: SQL-first reporting and dashboard read models.
 
-create or replace view railway_main.v_track_network as
+drop view if exists public.v_disruption_impact_summary cascade;
+drop view if exists public.v_active_disruptions cascade;
+drop view if exists public.v_active_train_journeys cascade;
+drop view if exists public.v_train_schedule_ordered cascade;
+drop view if exists public.v_track_network cascade;
+
+create or replace view public.v_track_network as
 select
   tr.id as track_id,
   tr.status,
@@ -18,12 +24,12 @@ select
   ts.station_code as to_station_code,
   ts.name as to_station_name,
   tr.geom
-from railway_main.tracks tr
-join railway_main.regions r on r.id = tr.region_id
-join railway_main.stations fs on fs.id = tr.from_station_id
-join railway_main.stations ts on ts.id = tr.to_station_id;
+from public.tracks tr
+join public.regions r on r.id = tr.region_id
+join public.stations fs on fs.id = tr.from_station_id
+join public.stations ts on ts.id = tr.to_station_id;
 
-create or replace view railway_main.v_train_schedule_ordered as
+create or replace view public.v_train_schedule_ordered as
 select
   sch.id as schedule_id,
   t.id as train_id,
@@ -37,12 +43,12 @@ select
   sch.scheduled_departure,
   sch.day_offset,
   sch.platform
-from railway_main.train_schedules sch
-join railway_main.trains t on t.id = sch.train_id
-join railway_main.stations s on s.id = sch.station_id
+from public.train_schedules sch
+join public.trains t on t.id = sch.train_id
+join public.stations s on s.id = sch.station_id
 order by t.train_number, sch.stop_sequence;
 
-create or replace view railway_main.v_active_train_journeys as
+create or replace view public.v_active_train_journeys as
 select
   tj.id as train_journey_id,
   tj.journey_date,
@@ -61,13 +67,13 @@ select
   ns.name as next_station_name,
   tj.actual_arrival,
   tj.actual_departure
-from railway_main.train_journeys tj
-join railway_main.trains t on t.id = tj.train_id
-left join railway_main.stations cs on cs.id = tj.current_station_id
-left join railway_main.stations ns on ns.id = tj.next_station_id
+from public.train_journeys tj
+join public.trains t on t.id = tj.train_id
+left join public.stations cs on cs.id = tj.current_station_id
+left join public.stations ns on ns.id = tj.next_station_id
 where tj.journey_status in ('RUNNING', 'DELAYED', 'REROUTED');
 
-create or replace view railway_main.v_active_disruptions as
+create or replace view public.v_active_disruptions as
 select
   d.id as disruption_id,
   d.type,
@@ -86,14 +92,14 @@ select
   s.station_code,
   s.name as station_name,
   d.geom
-from railway_main.disruptions d
-left join railway_main.tracks tr on tr.id = d.track_id
-left join railway_main.stations fs on fs.id = tr.from_station_id
-left join railway_main.stations ts on ts.id = tr.to_station_id
-left join railway_main.stations s on s.id = d.station_id
+from public.disruptions d
+left join public.tracks tr on tr.id = d.track_id
+left join public.stations fs on fs.id = tr.from_station_id
+left join public.stations ts on ts.id = tr.to_station_id
+left join public.stations s on s.id = d.station_id
 where d.status in ('OPEN', 'ANALYZING');
 
-create or replace view railway_main.v_disruption_impact_summary as
+create or replace view public.v_disruption_impact_summary as
 select
   d.id as disruption_id,
   d.type,
@@ -105,15 +111,31 @@ select
   coalesce(rr.recommendation_count, 0)::integer as recommendation_count,
   coalesce(rr.proposed_recommendation_count, 0)::integer as proposed_recommendation_count,
   coalesce(rr.applied_recommendation_count, 0)::integer as applied_recommendation_count
-from railway_main.disruptions d
+from public.disruptions d
 left join (
   select disruption_id, count(*) as affected_train_count,
     sum(estimated_delay_minutes) as total_estimated_delay_minutes
-  from railway_main.affected_trains group by disruption_id
+  from public.affected_trains group by disruption_id
 ) at on at.disruption_id = d.id
 left join (
   select disruption_id, count(*) as recommendation_count,
     count(*) filter (where status='PROPOSED') as proposed_recommendation_count,
     count(*) filter (where status='APPLIED') as applied_recommendation_count
-  from railway_main.route_recommendations group by disruption_id
+  from public.route_recommendations group by disruption_id
 ) rr on rr.disruption_id = d.id;
+
+create or replace view public.v_cross_region_journeys as
+select
+  tj.id as train_journey_id,
+  t.train_number,
+  t.name as train_name,
+  tj.journey_date,
+  tj.journey_status,
+  tj.delay_minutes,
+  array_agg(distinct r.code order by r.code) as region_codes
+from public.train_journeys tj
+join public.trains t on t.id = tj.train_id
+join public.train_schedules ts on ts.train_id = t.id
+join public.stations s on s.id = ts.station_id
+join public.regions r on r.id = s.region_id
+group by tj.id, t.train_number, t.name, tj.journey_date, tj.journey_status, tj.delay_minutes;

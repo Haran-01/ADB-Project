@@ -1,6 +1,6 @@
 -- Spatial distances: geography operations use metres; public distances use km.
-create or replace function railway_main.fn_network_geojson() returns jsonb
-language sql stable set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.fn_network_geojson() returns jsonb
+language sql stable set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 select jsonb_build_object('type','FeatureCollection','features',coalesce(jsonb_agg(feature),'[]'::jsonb))
 from (
   select jsonb_build_object('type','Feature','id',id,'geometry',ST_AsGeoJSON(geom)::jsonb,
@@ -9,21 +9,21 @@ from (
   union all
   select jsonb_build_object('type','Feature','id',id,'geometry',ST_AsGeoJSON(geom)::jsonb,
     'properties',jsonb_build_object('kind','track','from_station_id',from_station_id,'to_station_id',to_station_id,
-      'status',status,'distance_km',distance_km,'geometry_distance_km',geometry_distance_km)) from tracks
+      'status',status,'distance_km',distance_km,'geometry_distance_km',round((ST_Length(geom)/1000.0)::numeric, 2))) from tracks
 ) f;
 $$;
 
-create or replace function railway_main.fn_affected_tracks(p_area jsonb)
+create or replace function public.fn_affected_tracks(p_area jsonb)
 returns table(track_id uuid,distance_km numeric)
-language sql stable set search_path=railway_main,extensions,pg_temp as $$
+language sql stable set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
   select id,distance_km from tracks
   where ST_Intersects(geom,ST_SetSRID(ST_GeomFromGeoJSON(p_area),4326)::geography);
 $$;
 
-create or replace function railway_main.fn_get_active_track_availability(
+create or replace function public.fn_get_active_track_availability(
   p_track_id uuid,p_at_time timestamptz default now())
-returns table(track_id uuid,status railway_main.track_status,is_available boolean,valid_from timestamptz,valid_to timestamptz)
-language sql stable set search_path=railway_main,extensions,pg_temp as $$
+returns table(track_id uuid,status public.track_status,is_available boolean,valid_from timestamptz,valid_to timestamptz)
+language sql stable set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
   select tr.id,tr.status,
     tr.status='ACTIVE' and tr.valid_from<=p_at_time and (tr.valid_to is null or tr.valid_to>p_at_time)
     and fs.status='ACTIVE' and ts.status='ACTIVE'
@@ -35,9 +35,9 @@ language sql stable set search_path=railway_main,extensions,pg_temp as $$
   where tr.id=p_track_id;
 $$;
 
-create or replace function railway_main.fn_validate_route(p_route jsonb,p_depart_at timestamptz default now())
+create or replace function public.fn_validate_route(p_route jsonb,p_depart_at timestamptz default now())
 returns table(is_valid boolean,distance_km numeric,travel_minutes integer)
-language sql stable set search_path=railway_main,extensions,pg_temp as $$
+language sql stable set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
   with codes as (
     select value as code,ordinality as seq from jsonb_array_elements_text(p_route) with ordinality
   ), edges as (
@@ -60,8 +60,8 @@ language sql stable set search_path=railway_main,extensions,pg_temp as $$
 $$;
 
 -- The effective remaining route is the applied route, otherwise the ordered schedule.
-create or replace function railway_main.fn_remaining_route(p_journey_id uuid) returns jsonb
-language sql stable set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.fn_remaining_route(p_journey_id uuid) returns jsonb
+language sql stable set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
   with journey as (
     select j.*,s.station_code as current_code,coalesce(j.active_route,(select jsonb_agg(st.station_code order by sch.stop_sequence)
       from train_schedules sch join stations st on st.id=sch.station_id where sch.train_id=j.train_id)) route
@@ -72,9 +72,9 @@ language sql stable set search_path=railway_main,extensions,pg_temp as $$
   where ordinality>=coalesce((select min(ordinality) from stops where value=current_code),1);
 $$;
 
-create or replace function railway_main.fn_affected_journeys(p_disruption_id uuid)
-returns table(train_journey_id uuid,train_id uuid,impact_type railway_main.impact_type,remaining_route jsonb)
-language sql stable set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.fn_affected_journeys(p_disruption_id uuid)
+returns table(train_journey_id uuid,train_id uuid,impact_type public.impact_type,remaining_route jsonb)
+language sql stable set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
   with d as (select d.*,fs.station_code from_code,ts.station_code to_code,s.station_code target_code
     from disruptions d left join tracks t on t.id=d.track_id
     left join stations fs on fs.id=t.from_station_id left join stations ts on ts.id=t.to_station_id
@@ -87,11 +87,11 @@ language sql stable set search_path=railway_main,extensions,pg_temp as $$
     (d.station_id is not null and j.route ? d.target_code) or exists(
       select 1 from jsonb_array_elements_text(j.route) with ordinality a(code,seq)
       join jsonb_array_elements_text(j.route) with ordinality b(code,seq) on b.seq=a.seq+1
-      where a.code=d.from_code and b.code=d.to_code);
+      where (a.code=d.from_code and b.code=d.to_code));
 $$;
 
-create or replace function railway_main.fn_estimate_delay_minutes(
-  p_extra_distance_km numeric,p_speed_limit_kmph integer,p_severity railway_main.disruption_severity)
+create or replace function public.fn_estimate_delay_minutes(
+  p_extra_distance_km numeric,p_speed_limit_kmph integer,p_severity public.disruption_severity)
 returns integer language plpgsql immutable as $$
 begin
   if p_extra_distance_km is null or p_extra_distance_km<0 or p_speed_limit_kmph is null or p_speed_limit_kmph<=0 or p_severity is null then

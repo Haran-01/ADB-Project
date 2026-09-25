@@ -19,20 +19,45 @@ export class EventWorker {
   }
   async claim() {
     const token = randomUUID();
-    const { rows } = await this.pool.query(
-      `with candidate as (
-      select id from railway_main.event_log where attempts<5 and
-      ((status='PENDING' and available_at<=now()) or (status='PROCESSING' and locked_at<now()-interval '120 seconds'))
-      order by event_sequence for update skip locked limit 1)
-      update railway_main.event_log e set status='PROCESSING',attempts=attempts+1,locked_at=now(),lock_token=$1
-      from candidate c where e.id=c.id returning e.*`,
-      [token],
-    );
-    // A crashed final attempt must not leave a row permanently PROCESSING.
-    await this.pool.query(`update railway_main.event_log set status='FAILED',lock_token=null,locked_at=null,
+    try {
+      const { rows } = await this.pool.query(
+        `with candidate as (
+        select id from public.event_log where attempts<5 and
+        ((status='PENDING' and available_at<=now()) or (status='PROCESSING' and locked_at<now()-interval '120 seconds'))
+        order by event_sequence for update skip locked limit 1)
+        update public.event_log e set status='PROCESSING',attempts=attempts+1,locked_at=now(),lock_token=$1
+        from candidate c where e.id=c.id returning e.*`,
+        [token],
+      );
+      await this.deadLetterExpired('public');
+      return rows[0];
+    } catch (error) {
+      if (error.code !== '55000') throw error;
+      return this.claimRegional(token);
+    }
+  }
+  eventTable(event) {
+    return event?.source_schema ? `${event.source_schema}.event_log` : 'public.event_log';
+  }
+  async deadLetterExpired(schema) {
+    await this.pool.query(`update ${schema}.event_log set status='FAILED',lock_token=null,locked_at=null,
       last_error='Worker lease expired after final attempt' where status='PROCESSING' and attempts>=5
       and locked_at<now()-interval '120 seconds'`);
-    return rows[0];
+  }
+  async claimRegional(token) {
+    for (const schema of ['railway_south', 'railway_central', 'railway_north']) {
+      const { rows } = await this.pool.query(
+        `with candidate as (
+        select id from ${schema}.event_log where attempts<5 and
+        ((status='PENDING' and available_at<=now()) or (status='PROCESSING' and locked_at<now()-interval '120 seconds'))
+        order by event_sequence,created_at for update skip locked limit 1)
+        update ${schema}.event_log e set status='PROCESSING',attempts=attempts+1,locked_at=now(),lock_token=$1
+        from candidate c where e.id=c.id returning e.*,$2::text as source_schema`,
+        [token, schema],
+      );
+      await this.deadLetterExpired(schema);
+      if (rows[0]) return rows[0];
+    }
   }
   async process(event) {
     const name = socketEvents[event.event_type];
@@ -46,7 +71,7 @@ export class EventWorker {
       const {
         rows: [newer],
       } = await this.pool.query(
-        `select exists(select 1 from railway_main.event_log
+        `select exists(select 1 from public.event_log
         where event_type in ('TRACK_STATUS_CHANGED','NETWORK_CHANGED') and event_sequence>$1
         and status in ('PENDING','PROCESSING')) as present`,
         [event.event_sequence],
@@ -56,7 +81,7 @@ export class EventWorker {
     if (event.event_type === 'DISRUPTION_CREATED') {
       const {
         rows: [d],
-      } = await this.pool.query('select status,analysis_status from railway_main.disruptions where id=$1', [
+      } = await this.pool.query('select status,analysis_status from public.disruptions where id=$1', [
         event.entity_id,
       ]);
       if (d && !['RESOLVED', 'CANCELLED'].includes(d.status) && d.analysis_status !== 'COMPLETED')
@@ -71,7 +96,7 @@ export class EventWorker {
         () =>
           this.pool
             .query(
-              `update railway_main.event_log set locked_at=now()
+              `update ${this.eventTable(event)} set locked_at=now()
         where id=$1 and lock_token=$2 and status='PROCESSING'`,
               [event.id, event.lock_token],
             )
@@ -82,13 +107,13 @@ export class EventWorker {
       try {
         await this.process(event);
         await this.pool.query(
-          `update railway_main.event_log set status='PROCESSED',processed_at=now(),locked_at=null,
+          `update ${this.eventTable(event)} set status='PROCESSED',processed_at=now(),locked_at=null,
           lock_token=null,last_error=null where id=$1 and lock_token=$2`,
           [event.id, event.lock_token],
         );
       } catch (error) {
         await this.pool.query(
-          `update railway_main.event_log set status=case when attempts>=5 then 'FAILED'::railway_main.event_status else 'PENDING'::railway_main.event_status end,
+          `update ${this.eventTable(event)} set status=case when attempts>=5 then 'FAILED'::public.event_status else 'PENDING'::public.event_status end,
           available_at=now()+least(60,power(2,attempts)) * interval '1 second',locked_at=null,lock_token=null,last_error=$3
           where id=$1 and lock_token=$2`,
           [event.id, event.lock_token, String(error.code ?? error.name ?? 'ANALYSIS_FAILED').slice(0, 200)],

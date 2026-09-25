@@ -13,12 +13,22 @@ export function authorized(token, expected) {
   const b = Buffer.from(expected);
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
 export function createApp(deps) {
   const app = express();
   app.disable('x-powered-by');
-  app.use(cors({ origin: deps.env.FRONTEND_ORIGIN, methods: ['GET', 'POST'] }));
+  const origins = new Set([
+    deps.env.FRONTEND_ORIGIN,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ]);
+  app.use(cors({ origin: [...origins].filter(Boolean), methods: ['GET', 'POST'] }));
   app.use(express.json({ limit: '32kb' }));
   if (deps.env.NODE_ENV !== 'test') app.use(morgan(':method :url :status :response-time ms'));
+  
+  // Serve static web UI
+  app.use(express.static('frontend'));
+
   app.use('/api/health', healthRoutes(deps.pool, deps.graph));
   app.use('/api', (req, res, next) => {
     if (!authorized(req.get('authorization')?.replace(/^Bearer /, ''), deps.env.API_TOKEN))
@@ -26,6 +36,7 @@ export function createApp(deps) {
     next();
   });
   app.use('/api', apiRoutes(deps));
+
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
   app.use((error, _req, res, _next) => {
     if (error instanceof ZodError)

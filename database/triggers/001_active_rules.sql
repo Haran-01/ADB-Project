@@ -1,9 +1,9 @@
-create or replace function railway_main.trg_touch_updated_at() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_touch_updated_at() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin new.updated_at=clock_timestamp(); return new; end $$;
 
-create or replace function railway_main.trg_track_consistency() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_track_consistency() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 declare a stations; b stations;
 begin
   select * into strict a from stations where id=new.from_station_id for share;
@@ -18,8 +18,8 @@ begin
   return new;
 end $$;
 
-create or replace function railway_main.trg_journey_consistency() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_journey_consistency() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin
   if new.active_route is null then
     if exists (select 1 from unnest(array[new.current_station_id,new.next_station_id]) s(id)
@@ -36,8 +36,8 @@ begin
   return new;
 end $$;
 
-create or replace function railway_main.trg_track_change() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_track_change() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin
   if old.status is distinct from new.status then
     insert into track_status_history(track_id,old_status,new_status,changed_by,reason)
@@ -54,11 +54,11 @@ begin
   return new;
 end $$;
 
-create or replace function railway_main.trg_disruption_change() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_disruption_change() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin
   if tg_op='INSERT' or old.status is distinct from new.status then
-    insert into disruption_history(disruption_id,old_status,new_status,changed_by,note)
+    insert into disruption_history(disruption_id,old_status,new_status,changed_by,reason)
       values(new.id,case when tg_op='UPDATE' then old.status end,new.status,
         coalesce(current_setting('railway.actor',true),new.reported_by,current_user),'Disruption state changed');
   end if;
@@ -73,8 +73,8 @@ begin
   return new;
 end $$;
 
-create or replace function railway_main.trg_train_change() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_train_change() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin
   if old.status is distinct from new.status then
     insert into train_status_history(train_id,old_status,new_status,changed_by)
@@ -84,8 +84,8 @@ begin
   end if; return new;
 end $$;
 
-create or replace function railway_main.trg_journey_change() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_journey_change() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin
   if old.delay_minutes is distinct from new.delay_minutes then
     insert into journey_delay_history(train_journey_id,old_delay_minutes,new_delay_minutes,changed_by)
@@ -99,29 +99,48 @@ begin
   end if; return new;
 end $$;
 
-create or replace function railway_main.trg_publish_entity() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace function public.trg_publish_entity() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin
   insert into event_log(event_type,entity_type,entity_id,payload)
     values(tg_argv[0]::event_type,tg_table_name,new.id,
       jsonb_build_object('id',new.id,'disruption_id',new.disruption_id,'train_journey_id',new.train_journey_id));
   return new;
 end $$;
-create or replace function railway_main.trg_outbox_notify() returns trigger
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+
+create or replace function public.trg_outbox_notify() returns trigger
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin perform pg_notify('railway_events',jsonb_build_object('event_id',new.id)::text); return new; end $$;
 
-do $$ declare t text; begin
-  foreach t in array array['regions','stations','tracks','trains','train_schedules','train_journeys','disruptions','affected_trains','route_recommendations'] loop
-    execute format('create or replace trigger trg_touch_updated_at before update on railway_main.%I for each row execute function railway_main.trg_touch_updated_at()',t);
+do $$ declare s text; declare t text; begin
+  foreach s in array array['railway_south','railway_central','railway_north'] loop
+    foreach t in array array['regions','stations','tracks','trains','train_schedules','train_journeys','disruptions','affected_trains','route_recommendations'] loop
+      if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname=t and c.relkind='r') then
+        execute format('create or replace trigger trg_touch_updated_at before update on %I.%I for each row execute function public.trg_touch_updated_at()',s,t);
+      end if;
+    end loop;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname='tracks' and c.relkind='r') then
+      execute format('create or replace trigger trg_track_consistency before insert or update on %I.tracks for each row execute function public.trg_track_consistency()',s);
+      execute format('create or replace trigger trg_track_change after update on %I.tracks for each row execute function public.trg_track_change()',s);
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname='trains' and c.relkind='r') then
+      execute format('create or replace trigger trg_train_change after update on %I.trains for each row execute function public.trg_train_change()',s);
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname='train_journeys' and c.relkind='r') then
+      execute format('create or replace trigger trg_journey_consistency before insert or update on %I.train_journeys for each row execute function public.trg_journey_consistency()',s);
+      execute format('create or replace trigger trg_journey_change after update on %I.train_journeys for each row execute function public.trg_journey_change()',s);
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname='disruptions' and c.relkind='r') then
+      execute format('create or replace trigger trg_disruption_change after insert or update on %I.disruptions for each row execute function public.trg_disruption_change()',s);
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname='affected_trains' and c.relkind='r') then
+      execute format('create or replace trigger trg_affected_event after insert on %I.affected_trains for each row execute function public.trg_publish_entity(''TRAIN_AFFECTED'')',s);
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname='route_recommendations' and c.relkind='r') then
+      execute format('create or replace trigger trg_recommendation_event after insert on %I.route_recommendations for each row execute function public.trg_publish_entity(''ROUTE_RECOMMENDED'')',s);
+    end if;
+    if exists (select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname=s and c.relname='event_log' and c.relkind='r') then
+      execute format('create or replace trigger trg_outbox_notify after insert on %I.event_log for each row execute function public.trg_outbox_notify()',s);
+    end if;
   end loop;
 end $$;
-create or replace trigger trg_track_consistency before insert or update on railway_main.tracks for each row execute function railway_main.trg_track_consistency();
-create or replace trigger trg_journey_consistency before insert or update on railway_main.train_journeys for each row execute function railway_main.trg_journey_consistency();
-create or replace trigger trg_track_change after update on railway_main.tracks for each row execute function railway_main.trg_track_change();
-create or replace trigger trg_disruption_change after insert or update on railway_main.disruptions for each row execute function railway_main.trg_disruption_change();
-create or replace trigger trg_train_change after update on railway_main.trains for each row execute function railway_main.trg_train_change();
-create or replace trigger trg_journey_change after update on railway_main.train_journeys for each row execute function railway_main.trg_journey_change();
-create or replace trigger trg_affected_event after insert on railway_main.affected_trains for each row execute function railway_main.trg_publish_entity('TRAIN_AFFECTED');
-create or replace trigger trg_recommendation_event after insert on railway_main.route_recommendations for each row execute function railway_main.trg_publish_entity('ROUTE_RECOMMENDED');
-create or replace trigger trg_outbox_notify after insert on railway_main.event_log for each row execute function railway_main.trg_outbox_notify();

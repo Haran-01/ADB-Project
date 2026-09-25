@@ -1,14 +1,395 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#07110f" />
-    <meta name="description" content="Railway network disruption control room" />
-    <title>RailOps Control</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TrainTracker - Railway Management & Conflict System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Mobile Header Bar -->
+    <div class="mobile-header">
+      <button id="menu-toggle-btn" class="icon-btn" aria-label="Toggle Menu">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <div class="mobile-title">TrainTracker</div>
+      <button id="mobile-admin-btn" class="btn-yellow-pill btn-sm">Admin Login</button>
+    </div>
+
+    <!-- Left Fixed Sky-Blue Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <!-- Pin Logo -->
+      <div class="logo-container">
+        <div class="pin-logo">
+          <svg class="pin-icon" width="60" height="76" viewBox="0 0 60 76" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M30 2C15.64 2 4 13.64 4 28C4 44.5 26.5 67 28.9 69.4C29.5 70 30.5 70 31.1 69.4C33.5 67 56 44.5 56 28C56 13.64 44.36 2 30 2Z" fill="#FFD43B" stroke="#000000" stroke-width="3" stroke-linejoin="round"/>
+            <g transform="translate(15.5, 14) scale(1.15)">
+              <rect x="4" y="2" width="16" height="15" rx="3" fill="none" stroke="#000000" stroke-width="2"/>
+              <line x1="4" y1="9" x2="20" y2="9" stroke="#000000" stroke-width="2"/>
+              <circle cx="8" cy="13" r="1.2" fill="#000000"/>
+              <circle cx="16" cy="13" r="1.2" fill="#000000"/>
+              <line x1="7" y1="17" x2="4" y2="20" stroke="#000000" stroke-width="2" stroke-linecap="round"/>
+              <line x1="17" y1="17" x2="20" y2="20" stroke="#000000" stroke-width="2" stroke-linecap="round"/>
+            </g>
+          </svg>
+          <div class="pin-shadow"></div>
+        </div>
+      </div>
+
+      <!-- Navigation Links -->
+      <nav class="sidebar-nav">
+        <button class="nav-item active" id="nav-search-trains" data-view="view-search-trains">
+          <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>Search Trains</span>
+        </button>
+
+        <button class="nav-item" id="nav-view-trains" data-view="view-all-trains">
+          <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="3" width="16" height="15" rx="3"></rect>
+            <line x1="4" y1="10" x2="20" y2="10"></line>
+            <circle cx="8" cy="14" r="1.2"></circle>
+            <circle cx="16" cy="14" r="1.2"></circle>
+            <path d="M7 18L4 21"></path>
+            <path d="M17 18L20 21"></path>
+          </svg>
+          <span>View Trains</span>
+        </button>
+
+        <button class="nav-item" id="nav-search-stations" data-view="view-all-stations">
+          <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+            <circle cx="12" cy="10" r="3"></circle>
+          </svg>
+          <span>Search Stations</span>
+        </button>
+
+        <button class="nav-item" id="nav-live-track" data-view="view-live-track">
+          <svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="12" r="6"></circle>
+            <circle cx="12" cy="12" r="2"></circle>
+          </svg>
+          <span>Live Track</span>
+        </button>
+      </nav>
+    </aside>
+
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <!-- Main Content -->
+    <div class="main-wrapper">
+      <header class="top-header">
+        <h1 class="brand-title">TrainTracker</h1>
+        <button class="btn-yellow-pill" id="admin-login-btn">Admin Login</button>
+      </header>
+
+      <main class="content-body">
+        
+        <!-- View 1: Search Trains -->
+        <section id="view-search-trains" class="page-view active-view">
+          <div class="search-section">
+            <h2 class="section-title search-title">Search Trains</h2>
+            
+            <div class="search-card">
+              <form id="train-search-form" autocomplete="off">
+                <div class="inputs-wrapper">
+                  <div class="dashed-connector"></div>
+
+                  <div class="input-group">
+                    <span class="input-node yellow-node"></span>
+                    <input 
+                      type="text" 
+                      id="from-station" 
+                      class="station-input" 
+                      placeholder="From Station"
+                      aria-label="From Station"
+                    />
+                    <div id="from-suggestions" class="suggestions-dropdown hidden"></div>
+                  </div>
+
+                  <div class="input-group">
+                    <span class="input-node white-node"></span>
+                    <input 
+                      type="text" 
+                      id="to-station" 
+                      class="station-input" 
+                      placeholder="To Station" 
+                      aria-label="To Station"
+                    />
+                    <div id="to-suggestions" class="suggestions-dropdown hidden"></div>
+                  </div>
+
+                  <button type="button" id="swap-btn" class="swap-circle-btn" aria-label="Swap Stations">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="4" x2="12" y2="20"></line>
+                      <polyline points="16 8 12 4 8 8"></polyline>
+                      <polyline points="16 16 12 20 8 16"></polyline>
+                    </svg>
+                  </button>
+                </div>
+
+                <div id="search-validation" class="validation-message hidden">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <span id="validation-text">Please enter both departure and destination stations.</span>
+                </div>
+
+                <button type="submit" class="btn-find-trains">Find Trains</button>
+              </form>
+            </div>
+          </div>
+
+          <div class="results-section">
+            <h2 class="section-title">Available Trains</h2>
+            <div id="train-cards-container" class="cards-stack"></div>
+          </div>
+        </section>
+
+        <!-- View 2: View Trains -->
+        <section id="view-all-trains" class="page-view hidden">
+          <div class="view-trains-header">
+            <div>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <h2 class="section-title view-trains-title">All Trains</h2>
+                <button id="view-trains-clock-btn" class="icon-btn" title="Filter by departure time (05:00 AM - 11:00 PM)" style="background:#f0f4f8; border:1px solid #DDE3EA; border-radius:50%; padding:6px 8px; cursor:pointer;">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#48BDF2" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                </button>
+              </div>
+              <p class="section-subtitle-blue">Trains ordered by departure time</p>
+              <div id="active-time-filter-container" class="hidden" style="margin-top:6px; display:flex; align-items:center; gap:8px;">
+                <span id="active-time-filter-badge" style="background:#e0f2fe; color:#0284c7; font-size:12px; font-weight:600; padding:3px 10px; border-radius:12px; border:1px solid #bae6fd;"></span>
+                <button id="reset-time-filter-btn" style="background:none; border:none; color:#ef4444; font-size:12px; font-weight:600; cursor:pointer; text-decoration:underline;">Reset to Current Time</button>
+              </div>
+            </div>
+            <div class="sort-select-wrapper" style="display:flex; align-items:center; gap:10px;">
+              <select id="train-sort-select" class="sort-dropdown">
+                <option value="earliest">Sort: Earliest First</option>
+                <option value="latest">Sort: Latest First</option>
+                <option value="number">Sort: Train Number</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Time Picker Control Dropdown -->
+          <div id="time-picker-card" class="search-card hidden" style="margin-top:12px; padding:12px 16px;">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <label for="time-picker-input" style="font-weight:600; font-size:14px;">Select Departure Time (05:00 AM – 11:00 PM):</label>
+              <input type="time" id="time-picker-input" class="modal-input" style="width:140px; padding:4px 8px;" min="05:00" max="23:00" step="300" />
+              <button id="apply-time-filter-btn" class="btn-yellow-pill btn-sm">Apply Filter</button>
+              <button id="close-time-picker-btn" class="close-btn" style="font-size:18px;">&times;</button>
+            </div>
+          </div>
+
+          <div id="all-trains-list" class="cards-stack" style="margin-top:16px;"></div>
+        </section>
+
+        <!-- View 3: Search Stations -->
+        <section id="view-all-stations" class="page-view hidden">
+          <h2 class="section-title">Station Search</h2>
+          <p class="section-subtitle-blue">Find stations, live trains and connected routes</p>
+
+          <div class="station-search-box-card">
+            <form id="station-search-form" class="station-search-form" autocomplete="off">
+              <div class="station-search-input-wrapper">
+                <svg class="search-input-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="11" cy="11" r="8"></circle>
+                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input 
+                  type="text" 
+                  id="station-search-input" 
+                  class="station-search-input" 
+                  value="" 
+                  placeholder="Enter station code or name..."
+                />
+                <button type="submit" class="btn-search-station">Search Station</button>
+              </div>
+            </form>
+            <div class="station-helper-text">
+              Try <a href="#" class="station-quick-link" data-code="MAS">MAS</a>, 
+              <a href="#" class="station-quick-link" data-code="SBC">SBC</a>, 
+              <a href="#" class="station-quick-link" data-code="KPD">KPD</a>, 
+              <a href="#" class="station-quick-link" data-code="JTJ">JTJ</a> or station name
+            </div>
+          </div>
+
+          <!-- Station details container (hidden until valid search) -->
+          <div id="station-details-container" class="hidden">
+            <div class="station-tables-split">
+              <div class="station-table-card">
+                <div class="table-card-header">
+                  <div class="circle-icon-badge yellow-circle-badge">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="5" x2="12" y2="19"></line>
+                      <polyline points="19 12 12 19 5 12"></polyline>
+                    </svg>
+                  </div>
+                  <h3>Incoming Arrivals</h3>
+                </div>
+                <div class="table-responsive">
+                  <table class="station-data-table">
+                    <thead>
+                      <tr>
+                        <th>Train</th>
+                        <th>Time</th>
+                        <th>Platform</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="arrivals-table-body"></tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="station-table-card">
+                <div class="table-card-header">
+                  <div class="circle-icon-badge blue-circle-badge">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                      <line x1="12" y1="19" x2="12" y2="5"></line>
+                      <polyline points="5 12 12 5 19 12"></polyline>
+                    </svg>
+                  </div>
+                  <h3>Outgoing Departures</h3>
+                </div>
+                <div class="table-responsive">
+                  <table class="station-data-table">
+                    <thead>
+                      <tr>
+                        <th>Train</th>
+                        <th>Time</th>
+                        <th>Platform</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="departures-table-body"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="connected-routes-card">
+              <h3 class="connected-routes-title">Connected Routes</h3>
+              <p class="connected-routes-subtitle">Direct neighbor stations from Graph DB</p>
+              <div id="connected-routes-grid" class="routes-2x2-grid"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 4: Live Track (Matching New Reference Image) -->
+        <section id="view-live-track" class="page-view hidden">
+          <h2 class="section-title">Live Track</h2>
+
+          <div class="live-track-search-card">
+            <form id="live-track-form" class="live-track-form" autocomplete="off">
+              <div class="track-input-wrapper">
+                <svg class="track-train-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="4" y="3" width="16" height="15" rx="3"></rect>
+                  <line x1="4" y1="10" x2="20" y2="10"></line>
+                  <circle cx="8" cy="14" r="1.2"></circle>
+                  <circle cx="16" cy="14" r="1.2"></circle>
+                </svg>
+                <input 
+                  type="text" 
+                  id="live-track-input" 
+                  class="live-track-input" 
+                  value="" 
+                  placeholder="Enter train number or name..."
+                />
+                <div id="track-suggestions" class="suggestions-dropdown hidden"></div>
+              </div>
+              <button type="submit" class="btn-track-train">Track Train</button>
+            </form>
+          </div>
+
+          <!-- Route Vertical Progress Timeline -->
+          <div class="live-timeline-card">
+            <div id="live-timeline-content" class="live-timeline-wrapper"></div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  </div>
+
+  <!-- Admin Modal -->
+  <div id="admin-modal" class="modal-overlay hidden">
+    <div class="modal-card login-mode">
+      <div class="modal-header">
+        <h3 class="modal-title">Control Room Admin Panel</h3>
+        <button id="close-modal-btn" class="close-btn" aria-label="Close admin login">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="admin-login-form" class="admin-login-panel" autocomplete="off" novalidate>
+          <div class="admin-avatar" aria-hidden="true">
+            <svg width="86" height="86" viewBox="0 0 86 86" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="43" cy="43" r="39" fill="#FFD43B" stroke="#000000" stroke-width="4"/>
+              <path d="M43 18L66 27V43C66 57 56.5 68.5 43 72C29.5 68.5 20 57 20 43V27L43 18Z" fill="#FFFFFF" stroke="#000000" stroke-width="4" stroke-linejoin="round"/>
+              <circle cx="43" cy="36" r="7" fill="#FFD43B" stroke="#000000" stroke-width="4"/>
+              <path d="M28.5 63C31 52.5 36.5 48 43 48C49.5 48 55 52.5 57.5 63" fill="#FFFFFF" stroke="#000000" stroke-width="4" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <h2 class="admin-login-title">Admin Login</h2>
+
+          <label class="admin-input-shell" for="admin-user">
+            <span class="admin-input-icon" aria-hidden="true">
+              <svg width="31" height="25" viewBox="0 0 31 25" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="2" y="2" width="27" height="21" rx="2" stroke="currentColor" stroke-width="4"/>
+                <path d="M3.5 4.5L15.5 14L27.5 4.5" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </span>
+            <input type="email" id="admin-user" class="admin-login-input" placeholder="Email Address" aria-label="Email Address" />
+          </label>
+
+          <label class="admin-input-shell" for="admin-pass">
+            <span class="admin-input-icon" aria-hidden="true">
+              <svg width="28" height="33" viewBox="0 0 28 33" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="3" y="13" width="22" height="17" rx="3" stroke="currentColor" stroke-width="4"/>
+                <path d="M8 13V9C8 5 10.7 2 14 2C17.3 2 20 5 20 9V13" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+                <path d="M14 21V24" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+              </svg>
+            </span>
+            <input type="password" id="admin-pass" class="admin-login-input" placeholder="Password" aria-label="Password" />
+            <button id="toggle-admin-password" class="admin-password-toggle" type="button" aria-label="Show password">
+              <svg class="eye-open" width="31" height="22" viewBox="0 0 31 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2 11C5.5 4.8 10 2 15.5 2C21 2 25.5 4.8 29 11C25.5 17.2 21 20 15.5 20C10 20 5.5 17.2 2 11Z" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="15.5" cy="11" r="4" stroke="currentColor" stroke-width="4"/>
+              </svg>
+              <svg class="eye-closed hidden" width="31" height="26" viewBox="0 0 31 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M3 13C6.4 7 10.7 4.2 15.5 4.2C20.3 4.2 24.6 7 28 13" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+                <path d="M6 23L25 3" stroke="currentColor" stroke-width="4" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </label>
+
+          <div id="admin-auth-error" class="admin-auth-error hidden">Invalid admin credentials</div>
+          <button id="submit-login-btn" class="admin-login-submit" type="submit">Login</button>
+        </form>
+
+        <div id="admin-dashboard" class="hidden">
+          <div class="admin-status-badge">System Status: <span class="badge-green">ONLINE (5 DB Nodes)</span></div>
+          <h4 class="admin-subheading" style="margin-top:16px;">Regional Node Fragment Health</h4>
+          <div id="regional-stats-container" class="stats-grid"></div>
+
+          <h4 class="admin-subheading" style="margin-top:20px;">Platform Schedules & Conflict Monitor</h4>
+          <div id="platform-conflicts-container" class="conflicts-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
 </html>

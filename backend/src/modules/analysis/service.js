@@ -23,22 +23,23 @@ export class AnalysisService {
     const client = await this.pool.connect();
     try {
       const result = await transaction(client, async () => {
+        await client.query("select pg_advisory_xact_lock(hashtext('railway:analysis:' || $1::text))", [id]);
         const {
           rows: [d],
-        } = await client.query('select * from railway_main.disruptions where id=$1 for update', [id]);
+        } = await client.query('select * from public.disruptions where id=$1', [id]);
         if (!d) throw Object.assign(new Error('Disruption not found'), { status: 404 });
         if (d.analysis_status === 'COMPLETED')
           return { disruption_id: id, analysis_status: 'COMPLETED', already_analyzed: true };
         if (['RESOLVED', 'CANCELLED'].includes(d.status))
           throw Object.assign(new Error('Disruption is closed'), { status: 409 });
         await client.query(
-          "update railway_main.disruptions set status='ANALYZING',analysis_status='PROCESSING' where id=$1",
+          "update public.disruptions set status='ANALYZING',analysis_status='PROCESSING' where id=$1",
           [id],
         );
         this.report(id, 'network', 'Refreshing the railway routing network from PostgreSQL.');
         await this.graph.sync(client);
         this.report(id, 'impact', 'Checking remaining journeys for affected stations and track segments.');
-        const { rows: affected } = await client.query('select * from railway_main.fn_affected_journeys($1)', [
+        const { rows: affected } = await client.query('select * from public.fn_affected_journeys($1)', [
           id,
         ]);
         let recommendations = 0;
@@ -48,7 +49,7 @@ export class AnalysisService {
             'routing',
             `Searching alternate paths for journey ${affected.indexOf(journey) + 1} of ${affected.length}.`,
           );
-          await client.query('call railway_main.sp_record_affected_train($1,$2,$3,0)', [
+          await client.query('call public.sp_record_affected_train($1,$2,$3::public.impact_type,0)', [
             id,
             journey.train_journey_id,
             journey.impact_type,
@@ -65,23 +66,23 @@ export class AnalysisService {
             );
             const {
               rows: [metrics],
-            } = await client.query('select * from railway_main.fn_validate_route($1::jsonb)', [
+            } = await client.query('select * from public.fn_validate_route($1::jsonb)', [
               JSON.stringify(candidate.stationCodes),
             ]);
             if (!metrics.is_valid) continue;
             const {
               rows: [original],
-            } = await client.query('select * from railway_main.fn_validate_route($1::jsonb)', [
+            } = await client.query('select * from public.fn_validate_route($1::jsonb)', [
               JSON.stringify(route),
             ]);
             const {
               rows: [delay],
-            } = await client.query('select railway_main.fn_estimate_delay_minutes($1,60,$2) as minutes', [
+            } = await client.query('select public.fn_estimate_delay_minutes($1,60,$2::public.disruption_severity) as minutes', [
               Math.max(0, Number(metrics.distance_km) - Number(original.distance_km)),
               d.severity,
             ]);
             await client.query(
-              'call railway_main.sp_store_route_recommendation($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8)',
+              'call public.sp_store_route_recommendation($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8)',
               [
                 id,
                 journey.train_journey_id,
@@ -93,7 +94,7 @@ export class AnalysisService {
                 metrics.travel_minutes + delay.minutes,
               ],
             );
-            await client.query('call railway_main.sp_record_affected_train($1,$2,$3,$4)', [
+            await client.query('call public.sp_record_affected_train($1,$2,$3::public.impact_type,$4)', [
               id,
               journey.train_journey_id,
               journey.impact_type,
@@ -105,11 +106,11 @@ export class AnalysisService {
           }
           if (!stored)
             await client.query(
-              "update railway_main.affected_trains set status='WAITING' where disruption_id=$1 and train_journey_id=$2 and status='PENDING'",
+              "update public.affected_trains set status='WAITING' where disruption_id=$1 and train_journey_id=$2 and status='PENDING'",
               [id, journey.train_journey_id],
             );
         }
-        await client.query('call railway_main.sp_mark_disruption_analyzed($1)', [id]);
+        await client.query('call public.sp_mark_disruption_analyzed($1)', [id]);
         this.report(id, 'saving', 'Saving affected journeys, route proposals and event history together.');
         return {
           disruption_id: id,

@@ -4,7 +4,7 @@ export function networkRoutes(pool) {
   router.get('/map', async (_req, res) => {
     const {
       rows: [row],
-    } = await pool.query('select railway_main.fn_network_geojson() as geojson');
+    } = await pool.query('select public.fn_network_geojson() as geojson');
     res.json(row.geojson);
   });
   return router;

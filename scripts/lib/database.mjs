@@ -30,7 +30,7 @@ export function postgresConfig(env = loadEnv(), key = 'DATABASE_URL') {
           },
     connectionTimeoutMillis: 10000,
     statement_timeout: 30000,
-    options: '-c search_path=railway_main,extensions,public -c timezone=UTC',
+    options: '-c search_path=public,railway_south,railway_central,railway_north,extensions -c timezone=UTC',
     application_name: 'railway-management',
   };
 }

@@ -42,9 +42,9 @@ export class GraphProjection {
     const stations = (
       await client.query(`select s.id as "stationId",s.station_code as "stationCode",s.name,
       r.code as "regionCode",s.latitude::float8,s.longitude::float8,s.status,
-      s.status='ACTIVE' and not exists(select 1 from railway_main.disruptions d where d.station_id=s.id
+      s.status='ACTIVE' and not exists(select 1 from public.disruptions d where d.station_id=s.id
         and d.status in ('OPEN','ANALYZING') and d.started_at<=now() and (d.ended_at is null or d.ended_at>now())) as available
-      from railway_main.stations s join railway_main.regions r on r.id=s.region_id`)
+      from public.stations s join public.regions r on r.id=s.region_id`)
     ).rows;
     const tracks = (
       await client.query(`select t.id as "trackId",t.from_station_id as "fromId",t.to_station_id as "toId",
@@ -52,8 +52,8 @@ export class GraphProjection {
       ceil(t.distance_km/t.speed_limit_kmph*60)::float8 as "travelMinutes",t.status,r.code as region,
       r.code as "regionCode",a.is_available as available,
       extract(epoch from t.valid_from)*1000 as "validFrom",extract(epoch from t.valid_to)*1000 as "validTo"
-      from railway_main.tracks t join railway_main.regions r on r.id=t.region_id
-      cross join lateral railway_main.fn_get_active_track_availability(t.id) a`)
+      from public.tracks t join public.regions r on r.id=t.region_id
+      cross join lateral public.fn_get_active_track_availability(t.id) a`)
     ).rows.map((t) => ({
       ...t,
       validFrom: Number(t.validFrom),

@@ -3,26 +3,24 @@
 
 begin;
 
-set search_path to railway_main, extensions, public;
+set search_path to railway_south, railway_central, railway_north, public, extensions;
 
 truncate table
-  railway_main.route_recommendations,
-  railway_main.affected_trains,
-  railway_main.event_log,
-  railway_main.disruption_history,
-  railway_main.journey_delay_history,
-  railway_main.train_status_history,
-  railway_main.track_status_history,
-  railway_main.disruptions,
-  railway_main.train_journeys,
-  railway_main.train_schedules,
-  railway_main.trains,
-  railway_main.tracks,
-  railway_main.stations,
-  railway_main.regions
+  railway_south.train_schedules, railway_south.trains, railway_south.tracks, railway_south.stations,
+  railway_south.route_recommendations, railway_south.affected_trains, railway_south.event_log,
+  railway_south.disruption_history, railway_south.journey_delay_history, railway_south.train_status_history,
+  railway_south.track_status_history, railway_south.disruptions, railway_south.train_journeys, railway_south.regions,
+  railway_central.train_schedules, railway_central.trains, railway_central.tracks, railway_central.stations,
+  railway_central.route_recommendations, railway_central.affected_trains, railway_central.event_log,
+  railway_central.disruption_history, railway_central.journey_delay_history, railway_central.train_status_history,
+  railway_central.track_status_history, railway_central.disruptions, railway_central.train_journeys, railway_central.regions,
+  railway_north.train_schedules, railway_north.trains, railway_north.tracks, railway_north.stations,
+  railway_north.route_recommendations, railway_north.affected_trains, railway_north.event_log,
+  railway_north.disruption_history, railway_north.journey_delay_history, railway_north.train_status_history,
+  railway_north.track_status_history, railway_north.disruptions, railway_north.train_journeys, railway_north.regions
 cascade;
 
-insert into railway_main.regions (code, name, description)
+insert into railway_south.regions (code, name, description)
 values
   ('SR', 'Southern Railway Demo Region', 'Simulation region covering Tamil Nadu and nearby operational corridors.');
 
@@ -54,7 +52,7 @@ with station_data(station_code, name, zone, state, latitude, longitude, status) 
     ('TPTY', 'Tirupati', 'South Central Link', 'Andhra Pradesh', 13.6288, 79.4192, 'ACTIVE'),
     ('SBC', 'KSR Bengaluru City', 'South Western Link', 'Karnataka', 12.9784, 77.5696, 'ACTIVE')
 )
-insert into railway_main.stations (
+insert into railway_south.stations (
   station_code,
   name,
   region_id,
@@ -74,9 +72,9 @@ select
   latitude,
   longitude,
   ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)::geography,
-  status::railway_main.station_status
+  status::public.station_status
 from station_data
-cross join railway_main.regions r
+cross join railway_south.regions r
 where r.code = 'SR';
 
 with undirected_tracks(from_code, to_code, distance_km, track_type, speed_limit_kmph, status) as (
@@ -90,34 +88,37 @@ with undirected_tracks(from_code, to_code, distance_km, track_type, speed_limit_
     ('TUP', 'CBE', 50.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
     ('MS', 'TBM', 25.00, 'DOUBLE_ELECTRIFIED', 90, 'ACTIVE'),
     ('TBM', 'CGL', 31.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
-    ('CGL', 'VM', 103.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
+    ('CGL', 'VM', 121.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
     ('VM', 'TPJ', 178.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
-    ('TPJ', 'DG', 94.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
-    ('DG', 'MDU', 66.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
+    ('TPJ', 'DG', 94.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
+    ('DG', 'MDU', 62.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
     ('MDU', 'VPT', 43.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
-    ('VPT', 'TEN', 113.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
-    ('TEN', 'NCJ', 74.00, 'DOUBLE_ELECTRIFIED', 90, 'ACTIVE'),
-    ('VM', 'PDY', 38.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('TPJ', 'TJ', 50.00, 'DOUBLE_ELECTRIFIED', 90, 'ACTIVE'),
+    ('VPT', 'TEN', 114.00, 'DOUBLE_ELECTRIFIED', 110, 'MAINTENANCE'),
+    ('TEN', 'NCJ', 73.00, 'SINGLE_ELECTRIFIED', 90, 'ACTIVE'),
+    ('TPJ', 'KRR', 76.00, 'SINGLE_ELECTRIFIED', 90, 'ACTIVE'),
+    ('KRR', 'ED', 66.00, 'SINGLE_ELECTRIFIED', 90, 'ACTIVE'),
+    ('TPJ', 'TJ', 50.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
     ('TJ', 'MV', 70.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('MV', 'VM', 122.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('TPJ', 'KRR', 76.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
-    ('KRR', 'ED', 66.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
-    ('SA', 'KRR', 86.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('AJJ', 'RU', 74.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
+    ('VM', 'PDY', 38.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
+    ('KPD', 'RU', 105.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
     ('RU', 'TPTY', 10.00, 'DOUBLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('CGL', 'AJJ', 75.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('CGL', 'KPD', 119.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('JTJ', 'SBC', 145.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
-    ('DG', 'KRR', 74.00, 'SINGLE_ELECTRIFIED', 80, 'ACTIVE'),
-    ('MDU', 'TEN', 156.00, 'DOUBLE_ELECTRIFIED', 100, 'MAINTENANCE')
+    ('JTJ', 'SBC', 141.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
+    ('SA', 'KRR', 85.00, 'SINGLE_ELECTRIFIED', 90, 'ACTIVE'),
+    ('MAS', 'MS', 4.00, 'DOUBLE_ELECTRIFIED', 60, 'ACTIVE'),
+    ('MAS', 'TBM', 29.00, 'QUAD_ELECTRIFIED', 90, 'ACTIVE'),
+    ('MAS', 'CGL', 60.00, 'QUAD_ELECTRIFIED', 100, 'ACTIVE'),
+    ('MAS', 'VM', 181.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
+    ('MAS', 'TPJ', 359.00, 'DOUBLE_ELECTRIFIED', 110, 'ACTIVE'),
+    ('CGL', 'KPD', 105.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE'),
+    ('MV', 'VM', 103.00, 'SINGLE_ELECTRIFIED', 90, 'ACTIVE'),
+    ('AJJ', 'RU', 67.00, 'DOUBLE_ELECTRIFIED', 100, 'ACTIVE')
 ),
 directed_tracks as (
-  select * from undirected_tracks
+  select from_code, to_code, distance_km, track_type, speed_limit_kmph, status from undirected_tracks
   union all
   select to_code, from_code, distance_km, track_type, speed_limit_kmph, status from undirected_tracks
 )
-insert into railway_main.tracks (
+insert into railway_south.tracks (
   from_station_id,
   to_station_id,
   region_id,
@@ -136,31 +137,31 @@ select
   dt.distance_km,
   dt.track_type,
   dt.speed_limit_kmph,
-  dt.status::railway_main.track_status,
+  dt.status::public.track_status,
   ST_MakeLine(fs.geom::geometry, ts.geom::geometry)::geography,
   now() - interval '30 days',
   null
 from directed_tracks dt
-join railway_main.stations fs on fs.station_code = dt.from_code
-join railway_main.stations ts on ts.station_code = dt.to_code
-join railway_main.regions r on r.code = 'SR';
+join railway_south.stations fs on fs.station_code = dt.from_code
+join railway_south.stations ts on ts.station_code = dt.to_code
+join railway_south.regions r on r.code = 'SR';
 
 with train_data(train_number, name, train_type, priority, source_code, destination_code, status) as (
   values
-    ('12623', 'Chennai Central - Thiruvananthapuram Mail', 'SUPERFAST', 1, 'MAS', 'NCJ', 'RUNNING'),
-    ('12671', 'Nilgiri Express Demo', 'EXPRESS', 2, 'MAS', 'CBE', 'RUNNING'),
-    ('16127', 'Chennai Egmore - Guruvayur Express Demo', 'EXPRESS', 3, 'MS', 'TPJ', 'RUNNING'),
-    ('16787', 'Tirunelveli Intercity Demo', 'INTERCITY', 3, 'TEN', 'MDU', 'DELAYED'),
-    ('22637', 'West Coast Superfast Demo', 'SUPERFAST', 1, 'MAS', 'CBE', 'RUNNING'),
-    ('16853', 'Trichy - Chennai Chord Demo', 'PASSENGER', 4, 'TPJ', 'MS', 'SCHEDULED'),
-    ('20643', 'Coimbatore Intercity Demo', 'INTERCITY', 2, 'CBE', 'MAS', 'RUNNING'),
-    ('12635', 'Vaigai Express Demo', 'SUPERFAST', 1, 'MS', 'MDU', 'RUNNING'),
-    ('16352', 'Nagercoil Express Demo', 'EXPRESS', 3, 'NCJ', 'MS', 'RUNNING'),
-    ('16219', 'Bengaluru Link Express Demo', 'EXPRESS', 3, 'SBC', 'MAS', 'RUNNING'),
-    ('11021', 'Tirupati Passenger Demo', 'PASSENGER', 5, 'MAS', 'TPTY', 'SCHEDULED'),
-    ('56001', 'Villupuram Puducherry Passenger Demo', 'PASSENGER', 5, 'VM', 'PDY', 'RUNNING')
+    ('12623', 'Ananthapuri Express', 'SUPERFAST', 1, 'MAS', 'NCJ', 'RUNNING'),
+    ('12671', 'Nilgiri Superfast Express', 'SUPERFAST', 1, 'MAS', 'CBE', 'RUNNING'),
+    ('16127', 'Rockfort Express', 'EXPRESS', 2, 'MS', 'TPJ', 'RUNNING'),
+    ('16787', 'Tirunelveli–Madurai Express', 'EXPRESS', 2, 'TEN', 'MDU', 'RUNNING'),
+    ('22637', 'West Coast Express', 'SUPERFAST', 1, 'MAS', 'CBE', 'RUNNING'),
+    ('16853', 'Cholan Express', 'EXPRESS', 2, 'MS', 'TPJ', 'RUNNING'),
+    ('20643', 'Vande Bharat Express', 'SUPERFAST', 1, 'CBE', 'MAS', 'RUNNING'),
+    ('12635', 'Vaigai Superfast Express', 'SUPERFAST', 1, 'MS', 'MDU', 'RUNNING'),
+    ('16352', 'Nagercoil–Mumbai Express', 'EXPRESS', 2, 'NCJ', 'MS', 'RUNNING'),
+    ('16219', 'Mysuru Express', 'EXPRESS', 2, 'SBC', 'MAS', 'RUNNING'),
+    ('11021', 'Dadarly Express', 'EXPRESS', 2, 'MAS', 'TPTY', 'RUNNING'),
+    ('56001', 'Villupuram–Puducherry Passenger', 'PASSENGER', 3, 'VM', 'PDY', 'RUNNING')
 )
-insert into railway_main.trains (
+insert into railway_south.trains (
   train_number,
   name,
   train_type,
@@ -172,14 +173,14 @@ insert into railway_main.trains (
 select
   td.train_number,
   td.name,
-  td.train_type::railway_main.train_type,
+  td.train_type::public.train_type,
   td.priority,
   src.id,
   dst.id,
-  td.status::railway_main.train_status
+  td.status::public.train_status
 from train_data td
-join railway_main.stations src on src.station_code = td.source_code
-join railway_main.stations dst on dst.station_code = td.destination_code;
+join railway_south.stations src on src.station_code = td.source_code
+join railway_south.stations dst on dst.station_code = td.destination_code;
 
 with schedule_data(train_number, station_code, stop_sequence, scheduled_arrival, scheduled_departure, day_offset, platform) as (
   values
@@ -275,7 +276,7 @@ with schedule_data(train_number, station_code, stop_sequence, scheduled_arrival,
     ('56001', 'VM', 1, null, '17:30'::time, 0, '1'),
     ('56001', 'PDY', 2, '18:25'::time, null, 0, '1')
 )
-insert into railway_main.train_schedules (
+insert into railway_south.train_schedules (
   train_id,
   station_id,
   stop_sequence,
@@ -293,8 +294,8 @@ select
   sd.day_offset,
   sd.platform
 from schedule_data sd
-join railway_main.trains t on t.train_number = sd.train_number
-join railway_main.stations s on s.station_code = sd.station_code;
+join railway_south.trains t on t.train_number = sd.train_number
+join railway_south.stations s on s.station_code = sd.station_code;
 
 with journey_data(train_number, journey_date, current_code, next_code, actual_arrival, actual_departure, delay_minutes, journey_status) as (
   values
@@ -311,7 +312,7 @@ with journey_data(train_number, journey_date, current_code, next_code, actual_ar
     ('11021', current_date, 'MAS', 'AJJ', null, now() - interval '5 minutes', 0, 'RUNNING'),
     ('56001', current_date, 'VM', 'PDY', null, now() - interval '8 minutes', 0, 'RUNNING')
 )
-insert into railway_main.train_journeys (
+insert into railway_south.train_journeys (
   train_id,
   journey_date,
   current_station_id,
@@ -329,28 +330,28 @@ select
   jd.actual_arrival,
   jd.actual_departure,
   jd.delay_minutes,
-  jd.journey_status::railway_main.journey_status
+  jd.journey_status::public.journey_status
 from journey_data jd
-join railway_main.trains t on t.train_number = jd.train_number
-left join railway_main.stations cs on cs.station_code = jd.current_code
-left join railway_main.stations ns on ns.station_code = jd.next_code;
+join railway_south.trains t on t.train_number = jd.train_number
+left join railway_south.stations cs on cs.station_code = jd.current_code
+left join railway_south.stations ns on ns.station_code = jd.next_code;
 
-insert into railway_main.track_status_history (track_id, old_status, new_status, changed_at, changed_by, reason)
+insert into railway_south.track_status_history (track_id, old_status, new_status, changed_at, changed_by, reason)
 select id, null, status, now() - interval '30 days', 'seed', 'Initial demo track status'
-from railway_main.tracks;
+from railway_south.tracks;
 
-insert into railway_main.train_status_history (train_id, old_status, new_status, changed_at, changed_by, reason)
+insert into railway_south.train_status_history (train_id, old_status, new_status, changed_at, changed_by, reason)
 select id, null, status, now() - interval '1 day', 'seed', 'Initial demo train status'
-from railway_main.trains;
+from railway_south.trains;
 
-insert into railway_main.journey_delay_history (train_journey_id, old_delay_minutes, new_delay_minutes, changed_at, changed_by, reason)
+insert into railway_south.journey_delay_history (train_journey_id, old_delay_minutes, new_delay_minutes, changed_at, changed_by, reason)
 select id, null, delay_minutes, now() - interval '30 minutes', 'seed', 'Initial simulated delay state'
-from railway_main.train_journeys
+from railway_south.train_journeys
 where delay_minutes > 0;
 
 with disruption_data(type, track_from, track_to, station_code, severity, reported_by, description, started_at, ended_at, status) as (
   values
-    ('MAINTENANCE', 'MDU', 'TEN', null, 'MEDIUM', 'seed-system', 'Planned maintenance block between Madurai and Tirunelveli direct corridor.', now() - interval '3 hours', null, 'OPEN'),
+    ('MAINTENANCE', 'VPT', 'TEN', null, 'MEDIUM', 'seed-system', 'Planned maintenance block between Virudhunagar and Tirunelveli direct corridor.', now() - interval '3 hours', null, 'OPEN'),
     ('TRACK_FAILURE', 'CGL', 'VM', null, 'HIGH', 'control-room', 'Signal and track circuit failure near Chengalpattu - Villupuram section.', now() - interval '45 minutes', null, 'ANALYZING'),
     ('STATION_CLOSURE', null, null, 'PDY', 'LOW', 'station-master', 'Platform inspection window at Puducherry station.', now() - interval '2 hours', now() - interval '1 hour', 'RESOLVED')
 ),
@@ -365,12 +366,12 @@ resolved_disruptions as (
       else null
     end as geom
   from disruption_data dd
-  left join railway_main.stations fs on fs.station_code = dd.track_from
-  left join railway_main.stations ts on ts.station_code = dd.track_to
-  left join railway_main.tracks tr on tr.from_station_id = fs.id and tr.to_station_id = ts.id
-  left join railway_main.stations st on st.station_code = dd.station_code
+  left join railway_south.stations fs on fs.station_code = dd.track_from
+  left join railway_south.stations ts on ts.station_code = dd.track_to
+  left join railway_south.tracks tr on tr.from_station_id = fs.id and tr.to_station_id = ts.id
+  left join railway_south.stations st on st.station_code = dd.station_code
 )
-insert into railway_main.disruptions (
+insert into railway_south.disruptions (
   type,
   track_id,
   station_id,
@@ -383,44 +384,44 @@ insert into railway_main.disruptions (
   geom
 )
 select
-  type::railway_main.disruption_type,
+  type::public.disruption_type,
   track_id,
   station_id,
-  severity::railway_main.disruption_severity,
+  severity::public.disruption_severity,
   reported_by,
   description,
   started_at,
   ended_at,
-  status::railway_main.disruption_status,
+  status::public.disruption_status,
   geom
 from resolved_disruptions;
 
-insert into railway_main.disruption_history (disruption_id, old_status, new_status, changed_at, changed_by, note)
+insert into railway_south.disruption_history (disruption_id, old_status, new_status, changed_at, changed_by, reason)
 select id, null, status, started_at, reported_by, 'Initial seeded disruption state'
-from railway_main.disruptions d
-where not exists(select 1 from railway_main.disruption_history h where h.disruption_id=d.id);
+from railway_south.disruptions d
+where not exists(select 1 from railway_south.disruption_history h where h.disruption_id=d.id);
 
-insert into railway_main.event_log (event_type, entity_type, entity_id, payload, created_at, processed_at, status)
+insert into railway_south.event_log (event_type, entity_type, entity_id, payload, created_at, processed_at, status)
 select
-  'DISRUPTION_CREATED'::railway_main.event_type,
+  'DISRUPTION_CREATED'::public.event_type,
   'disruptions',
   d.id,
   jsonb_build_object('disruption_id', d.id, 'type', d.type, 'status', d.status),
   d.created_at,
-  case when d.status = 'RESOLVED'::railway_main.disruption_status then d.created_at + interval '5 minutes' else null end,
-  case when d.status = 'RESOLVED'::railway_main.disruption_status then 'PROCESSED'::railway_main.event_status else 'PENDING'::railway_main.event_status end
-from railway_main.disruptions d
-where not exists(select 1 from railway_main.event_log e where e.entity_id=d.id and e.event_type='DISRUPTION_CREATED');
+  case when d.status = 'RESOLVED'::public.disruption_status then d.created_at + interval '5 minutes' else null end,
+  case when d.status = 'RESOLVED'::public.disruption_status then 'PROCESSED'::public.event_status else 'PENDING'::public.event_status end
+from railway_south.disruptions d
+where not exists(select 1 from railway_south.event_log e where e.entity_id=d.id and e.event_type='DISRUPTION_CREATED');
 
-update railway_main.event_log e set status='PROCESSED',processed_at=now()
-from railway_main.disruptions d where e.entity_id=d.id and d.status='RESOLVED';
+update railway_south.event_log e set status='PROCESSED',processed_at=now()
+from railway_south.disruptions d where e.entity_id=d.id and d.status='RESOLVED';
 
 with active_track_failure as (
   select d.id as disruption_id
-  from railway_main.disruptions d
-  join railway_main.tracks tr on tr.id = d.track_id
-  join railway_main.stations fs on fs.id = tr.from_station_id
-  join railway_main.stations ts on ts.id = tr.to_station_id
+  from railway_south.disruptions d
+  join railway_south.tracks tr on tr.id = d.track_id
+  join railway_south.stations fs on fs.id = tr.from_station_id
+  join railway_south.stations ts on ts.id = tr.to_station_id
   where fs.station_code = 'CGL'
     and ts.station_code = 'VM'
 ),
@@ -431,7 +432,7 @@ impacts(train_number, impact_type, delay, status) as (
     ('16352', 'UPSTREAM_DELAY', 30, 'WAITING'),
     ('16853', 'REGIONAL_IMPACT', 20, 'WAITING')
 )
-insert into railway_main.affected_trains (
+insert into railway_south.affected_trains (
   disruption_id,
   train_journey_id,
   impact_type,
@@ -441,20 +442,20 @@ insert into railway_main.affected_trains (
 select
   atf.disruption_id,
   tj.id,
-  i.impact_type::railway_main.impact_type,
+  i.impact_type::public.impact_type,
   i.delay,
-  i.status::railway_main.affected_train_status
+  i.status::public.affected_train_status
 from active_track_failure atf
 cross join impacts i
-join railway_main.trains t on t.train_number = i.train_number
-join railway_main.train_journeys tj on tj.train_id = t.id and tj.journey_date = current_date;
+join railway_south.trains t on t.train_number = i.train_number
+join railway_south.train_journeys tj on tj.train_id = t.id and tj.journey_date = current_date;
 
 with active_track_failure as (
   select d.id as disruption_id
-  from railway_main.disruptions d
-  join railway_main.tracks tr on tr.id = d.track_id
-  join railway_main.stations fs on fs.id = tr.from_station_id
-  join railway_main.stations ts on ts.id = tr.to_station_id
+  from railway_south.disruptions d
+  join railway_south.tracks tr on tr.id = d.track_id
+  join railway_south.stations fs on fs.id = tr.from_station_id
+  join railway_south.stations ts on ts.id = tr.to_station_id
   where fs.station_code = 'CGL'
     and ts.station_code = 'VM'
 ),
@@ -481,7 +482,7 @@ recommendations(train_number, original_route, recommended_route, distance_km, tr
       'PROPOSED'
     )
 )
-insert into railway_main.route_recommendations (
+insert into railway_south.route_recommendations (
   disruption_id,
   train_journey_id,
   original_route,
@@ -501,10 +502,10 @@ select
   r.travel_minutes,
   r.delay_minutes,
   r.score,
-  r.status::railway_main.recommendation_status
+  r.status::public.recommendation_status
 from active_track_failure atf
 cross join recommendations r
-join railway_main.trains t on t.train_number = r.train_number
-join railway_main.train_journeys tj on tj.train_id = t.id and tj.journey_date = current_date;
+join railway_south.trains t on t.train_number = r.train_number
+join railway_south.train_journeys tj on tj.train_id = t.id and tj.journey_date = current_date;
 
 commit;

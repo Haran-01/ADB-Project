@@ -1,28 +1,32 @@
-create or replace procedure railway_main.sp_record_affected_train(
-  p_disruption_id uuid,p_train_journey_id uuid,p_impact_type railway_main.impact_type,
-  p_estimated_delay_minutes integer,p_status railway_main.affected_train_status default 'PENDING')
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+create or replace procedure public.sp_record_affected_train(
+  p_disruption_id uuid,p_train_journey_id uuid,p_impact_type public.impact_type,
+  p_estimated_delay_minutes integer,p_status public.affected_train_status default 'PENDING')
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 begin
   if not exists(select 1 from disruptions where id=p_disruption_id and status in ('OPEN','ANALYZING')) then
     raise exception 'Disruption is missing or closed' using errcode='22023';
   end if;
-  insert into affected_trains(disruption_id,train_journey_id,impact_type,estimated_delay_minutes,status)
-  values(p_disruption_id,p_train_journey_id,p_impact_type,p_estimated_delay_minutes,p_status)
-  on conflict(disruption_id,train_journey_id) do update set impact_type=excluded.impact_type,
-    estimated_delay_minutes=excluded.estimated_delay_minutes,status=excluded.status
-  where affected_trains.status not in ('REROUTED','CANCELLED','CLEARED');
+  if exists (select 1 from affected_trains where disruption_id=p_disruption_id and train_journey_id=p_train_journey_id) then
+    update affected_trains set impact_type=p_impact_type,
+      estimated_delay_minutes=p_estimated_delay_minutes,status=p_status
+    where disruption_id=p_disruption_id and train_journey_id=p_train_journey_id
+      and status not in ('REROUTED','CANCELLED','CLEARED');
+  else
+    insert into affected_trains(disruption_id,train_journey_id,impact_type,estimated_delay_minutes,status)
+    values(p_disruption_id,p_train_journey_id,p_impact_type,p_estimated_delay_minutes,p_status);
+  end if;
 end $$;
 
-create or replace procedure railway_main.sp_store_route_recommendation(
+create or replace procedure public.sp_store_route_recommendation(
   p_disruption_id uuid,p_train_journey_id uuid,p_original_route jsonb,p_recommended_route jsonb,
   p_distance_km numeric,p_estimated_travel_minutes integer,p_estimated_delay_minutes integer,
-  p_score numeric,p_status railway_main.recommendation_status default 'PROPOSED')
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+  p_score numeric,p_status public.recommendation_status default 'PROPOSED')
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 declare metrics record; j train_journeys;
 begin
-  perform 1 from disruptions where id=p_disruption_id and status in ('OPEN','ANALYZING') for update;
+  perform 1 from disruptions where id=p_disruption_id and status in ('OPEN','ANALYZING');
   if not found then raise exception 'Disruption is missing or closed' using errcode='22023'; end if;
-  select * into j from train_journeys where id=p_train_journey_id for update;
+  select * into j from train_journeys where id=p_train_journey_id;
   if j.id is null or j.journey_status in ('COMPLETED','CANCELLED') or p_status<>'PROPOSED' then
     raise exception 'Cannot propose route for this journey or status' using errcode='22023';
   end if;
@@ -44,12 +48,12 @@ begin
     metrics.travel_minutes,p_estimated_delay_minutes,p_score,p_status);
 end $$;
 
-create or replace procedure railway_main.sp_mark_disruption_analyzed(
+create or replace procedure public.sp_mark_disruption_analyzed(
   p_disruption_id uuid,p_changed_by text default 'database-procedure',p_note text default 'Disruption analysis completed')
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 declare d disruptions;
 begin
-  select * into d from disruptions where id=p_disruption_id for update;
+  select * into d from disruptions where id=p_disruption_id;
   if d.id is null or d.status in ('RESOLVED','CANCELLED') then
     raise exception 'Disruption is missing or closed' using errcode='22023';
   end if;
@@ -60,18 +64,18 @@ begin
   update disruptions set analysis_status='COMPLETED',analyzed_at=now() where id=d.id;
 end $$;
 
-create or replace procedure railway_main.sp_apply_route_recommendation(
+create or replace procedure public.sp_apply_route_recommendation(
   p_recommendation_id uuid,p_changed_by text default 'database-procedure')
-language plpgsql set search_path=railway_main,extensions,pg_temp as $$
+language plpgsql set search_path=public,railway_south,railway_central,railway_north,extensions,pg_temp as $$
 declare r route_recommendations; j train_journeys; metrics record; d disruptions;
 begin
   select dd.* into d from disruptions dd join route_recommendations rr on rr.disruption_id=dd.id
-    where rr.id=p_recommendation_id for update of dd;
+    where rr.id=p_recommendation_id;
   -- Serialize all competing recommendations for the same journey, not just this row.
   select tj.* into j from train_journeys tj join route_recommendations rr on rr.train_journey_id=tj.id
-    where rr.id=p_recommendation_id for update of tj;
+    where rr.id=p_recommendation_id;
   if j.id is null then raise exception 'Recommendation not found' using errcode='P0002'; end if;
-  select * into r from route_recommendations where id=p_recommendation_id for update;
+  select * into r from route_recommendations where id=p_recommendation_id;
   if r.status='APPLIED' then return; end if;
   if d.status in ('RESOLVED','CANCELLED') then raise exception 'Disruption is closed' using errcode='22023'; end if;
   if r.status not in ('PROPOSED','ACCEPTED') or j.journey_status in ('COMPLETED','CANCELLED') then
@@ -81,7 +85,7 @@ begin
     or exists(select 1 from route_recommendations where train_journey_id=j.id and status='APPLIED') then
     raise exception 'Missing affected journey or a route is already applied' using errcode='22023';
   end if;
-  perform 1 from tracks t join stations s on s.id=t.from_station_id where r.recommended_route ? s.station_code for share of t;
+  perform 1 from tracks t join stations s on s.id=t.from_station_id where r.recommended_route ? s.station_code;
   select * into metrics from fn_validate_route(r.recommended_route);
   if not metrics.is_valid or r.recommended_route->>0 is distinct from fn_remaining_route(j.id)->>0 then
     raise exception 'Route is no longer feasible from current position' using errcode='22023';
