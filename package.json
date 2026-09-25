@@ -14,6 +14,7 @@
     "graph:verify": "node scripts/sync-neo4j.mjs --verify",
     "start": "node backend/src/server.js",
     "dev": "nodemon backend/src/server.js",
+    "test": "node scripts/verify-schema.mjs",
     "format": "prettier --write 'backend/src/**/*.js' 'scripts/**/*.mjs'",
     "format:check": "prettier --check 'backend/src/**/*.js' 'scripts/**/*.mjs'"
   },
