@@ -1740,9 +1740,6 @@ function adminGraphSvg() {
           })
           .join('')}
       </g>
-      <g class="admin-damaged-badge-layer">
-        ${damagedBadges.join('')}
-      </g>
       <g class="admin-node-layer">
         ${graph.nodes
           .map((node) => {
