@@ -37,9 +37,16 @@ const conflictSchema = z
     stationId: z.uuid().optional(),
     severity: z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']),
     title: z.string().trim().min(1).max(160),
-    description: z.string().trim().min(1).max(2000),
+    description: z
+      .string()
+      .trim()
+      .min(1)
+      .max(2000)
+      .default('Track disruption reported by admin')
+      .optional(),
     expectedDuration: z.string().trim().max(80).optional(),
     note: z.string().trim().max(1000).optional(),
+    autoAllocate: z.boolean().default(true).optional(),
   })
   .strict()
   .refine((v) => Boolean(v.trackId) !== Boolean(v.stationId), {
@@ -47,7 +54,12 @@ const conflictSchema = z
   });
 const resolveConflictSchema = z
   .object({
-    resolutionNote: z.string().trim().min(1).max(2000),
+    resolutionNote: z
+      .string()
+      .trim()
+      .max(2000)
+      .default('Track repairs completed. Regular operations restored.')
+      .optional(),
     restoreStatus: z.enum(['ACTIVE', 'FAILED', 'MAINTENANCE', 'BLOCKED']).default('ACTIVE'),
   })
   .strict();
@@ -333,7 +345,11 @@ export function adminRoutes(pool) {
   router.get('/conflicts', async (req, res) => {
     const status = String(req.query.status ?? 'OPEN').toUpperCase();
     const { rows } = await pool.query(
-      `select d.*, fs.station_code as from_station, ts.station_code as to_station, s.station_code as station_code
+      `select d.*,
+              fs.station_code as from_station, fs.name as from_station_name,
+              ts.station_code as to_station, ts.name as to_station_name,
+              s.station_code as station_code, s.name as station_name,
+              coalesce((select count(*)::int from public.affected_trains at where at.disruption_id = d.id), 0) as affected_count
        from public.disruptions d
        left join public.tracks t on t.id = d.track_id
        left join public.stations fs on fs.id = t.from_station_id
@@ -346,8 +362,34 @@ export function adminRoutes(pool) {
     res.json({ data: rows });
   });
 
-  router.post('/conflicts', async (req, res) => {
-    const body = conflictSchema.parse(req.body);
+  router.get('/tracks', async (_req, res) => {
+    const { rows } = await pool.query(`
+      select
+        tr.id,
+        tr.status,
+        tr.distance_km,
+        tr.track_type,
+        tr.speed_limit_kmph,
+        coalesce(r.code, 'SR') as region_code,
+        coalesce(r.name, 'South') as region_name,
+        fs.id as from_station_id,
+        fs.station_code as from_station_code,
+        fs.name as from_station_name,
+        ts.id as to_station_id,
+        ts.station_code as to_station_code,
+        ts.name as to_station_name
+      from public.tracks tr
+      join public.stations fs on fs.id = tr.from_station_id
+      join public.stations ts on ts.id = tr.to_station_id
+      left join public.regions r on r.id = tr.region_id
+      order by r.code, fs.station_code, ts.station_code
+    `);
+    res.json({ data: rows });
+  });
+
+  router.post('/conflicts', async (req, res, next) => {
+    try {
+      const body = conflictSchema.parse(req.body);
     const description = [
       body.title,
       body.description,
@@ -356,50 +398,390 @@ export function adminRoutes(pool) {
     ]
       .filter(Boolean)
       .join('\n\n');
+
+    let damagedTrack = null;
+    if (body.trackId) {
+      const { rows: trackRows } = await pool.query(
+        `select tr.id, tr.from_station_id, tr.to_station_id, tr.distance_km, tr.speed_limit_kmph, tr.status,
+                fs.station_code as from_code, fs.name as from_name,
+                ts.station_code as to_code, ts.name as to_name
+         from public.tracks tr
+         join public.stations fs on fs.id = tr.from_station_id
+         join public.stations ts on ts.id = tr.to_station_id
+         where tr.id = $1`,
+        [body.trackId],
+      );
+      damagedTrack = trackRows[0] || null;
+    }
+
     const { rows } = await pool.query(
       `insert into public.disruptions (type, track_id, station_id, severity, reported_by, description, status)
        values ($1,$2,$3,$4,$5,$6,'OPEN')
        returning *`,
       [body.conflictType, body.trackId ?? null, body.stationId ?? null, body.severity, 'admin', description],
     );
-    if (body.trackId) {
-      await pool.query(`update public.tracks set status='BLOCKED', updated_at=now() where id=$1`, [
-        body.trackId,
-      ]);
+
+    if (body.trackId && damagedTrack) {
+      await Promise.all(
+        REGION_SCHEMAS.map((schema) =>
+          pool.query(
+            `update ${schema}.tracks set status='BLOCKED', updated_at=now()
+             where (from_station_id = $1 and to_station_id = $2)
+                or (from_station_id = $2 and to_station_id = $1)`,
+            [damagedTrack.from_station_id, damagedTrack.to_station_id],
+          ),
+        ),
+      );
+    } else if (body.trackId) {
+      await Promise.all(
+        REGION_SCHEMAS.map((schema) =>
+          pool.query(`update ${schema}.tracks set status='BLOCKED', updated_at=now() where id=$1`, [
+            body.trackId,
+          ]),
+        ),
+      );
     }
     if (body.stationId && body.conflictType === 'STATION_CLOSURE') {
       await pool.query(`update public.stations set status='CLOSED', updated_at=now() where id=$1`, [
         body.stationId,
       ]);
     }
-    res.status(201).json({ data: rows[0], graphVersion: graphVersion() });
-  });
+
+    const reroutedJourneys = [];
+    if (body.trackId && body.autoAllocate !== false && damagedTrack) {
+      // Fetch all running or scheduled train journeys
+      const { rows: journeys } = await pool.query(`
+        select tj.id as journey_id, tj.train_id, tj.journey_status, tj.delay_minutes,
+               t.train_number, t.name as train_name,
+               coalesce(tj.active_route, (
+                 select jsonb_agg(st.station_code order by sch.stop_sequence)
+                 from public.train_schedules sch
+                 join public.stations st on st.id = sch.station_id
+                 where sch.train_id = tj.train_id
+               )) as current_route,
+               cs.station_code as current_code,
+               ds.station_code as dest_code
+        from public.train_journeys tj
+        join public.trains t on t.id = tj.train_id
+        left join public.stations cs on cs.id = tj.current_station_id
+        left join public.stations ds on ds.id = t.destination_station_id
+        where tj.journey_status in ('RUNNING', 'SCHEDULED', 'DELAYED')
+      `);
+
+      // Rebuild graph for Dijkstra with the damaged track corridor strictly removed
+      const graph = await aggregateGraph(pool);
+      graph.edges = graph.edges.filter(
+        (e) =>
+          e.id !== body.trackId &&
+          !(
+            (e.sourceCode === damagedTrack.from_code && e.targetCode === damagedTrack.to_code) ||
+            (e.sourceCode === damagedTrack.to_code && e.targetCode === damagedTrack.from_code)
+          ) &&
+          AVAILABLE_TRACK_STATUSES.has(e.status),
+      );
+
+      for (const j of journeys) {
+        const rawRoute = Array.isArray(j.current_route)
+          ? j.current_route
+          : JSON.parse(j.current_route || '[]');
+
+        if (!rawRoute || rawRoute.length < 2) continue;
+
+        let traverseIndex = -1;
+        for (let i = 0; i < rawRoute.length - 1; i++) {
+          if (
+            (rawRoute[i] === damagedTrack.from_code && rawRoute[i + 1] === damagedTrack.to_code) ||
+            (rawRoute[i] === damagedTrack.to_code && rawRoute[i + 1] === damagedTrack.from_code)
+          ) {
+            traverseIndex = i;
+            break;
+          }
+        }
+
+        if (traverseIndex !== -1) {
+          const startNode = rawRoute[traverseIndex];
+          const nextNode = rawRoute[traverseIndex + 1];
+          const prevNode = traverseIndex > 0 ? rawRoute[traverseIndex - 1] : null;
+          const afterNode = traverseIndex + 2 < rawRoute.length ? rawRoute[traverseIndex + 2] : null;
+
+          let dijkstraResult = null;
+          let newAllocatedRoute = null;
+          let bypassCodes = [];
+          let delayAdded = 0;
+
+          // Strategy 1: Forward bypass to subsequent station (e.g. MAS -> KPD direct, avoiding AJJ)
+          if (afterNode) {
+            const detour = calculateRoute(graph, startNode, afterNode, 'shortest');
+            if (detour.available && detour.stations.length >= 2) {
+              dijkstraResult = detour;
+              bypassCodes = detour.stations.map((s) => s.code);
+              newAllocatedRoute = [
+                ...rawRoute.slice(0, traverseIndex),
+                ...bypassCodes,
+                ...rawRoute.slice(traverseIndex + 3),
+              ];
+              delayAdded = Math.max(8, Math.round(detour.estimatedDurationMinutes * 0.3));
+            }
+          }
+
+          // Strategy 2: Reverse/inbound bypass from previous station (e.g. KPD -> MAS direct, avoiding AJJ)
+          if (!newAllocatedRoute && prevNode) {
+            const detour = calculateRoute(graph, prevNode, nextNode, 'shortest');
+            if (detour.available && detour.stations.length >= 2) {
+              dijkstraResult = detour;
+              bypassCodes = detour.stations.map((s) => s.code);
+              newAllocatedRoute = [
+                ...rawRoute.slice(0, traverseIndex - 1),
+                ...bypassCodes,
+                ...rawRoute.slice(traverseIndex + 2),
+              ];
+              delayAdded = Math.max(8, Math.round(detour.estimatedDurationMinutes * 0.3));
+            }
+          }
+
+          // Strategy 3: Direct segment bypass (e.g. MAS -> CGL -> KPD -> AJJ)
+          if (!newAllocatedRoute) {
+            const detour = calculateRoute(graph, startNode, nextNode, 'shortest');
+            if (detour.available && detour.stations.length >= 2) {
+              dijkstraResult = detour;
+              bypassCodes = detour.stations.map((s) => s.code);
+              newAllocatedRoute = [
+                ...rawRoute.slice(0, traverseIndex),
+                ...bypassCodes,
+                ...rawRoute.slice(traverseIndex + 2),
+              ];
+              delayAdded = Math.max(8, Math.round(detour.estimatedDurationMinutes * 0.35));
+            }
+          }
+
+          // Strategy 4: Destination bypass
+          if (!newAllocatedRoute) {
+            const finalDest = rawRoute.at(-1);
+            if (startNode !== finalDest) {
+              const detour = calculateRoute(graph, startNode, finalDest, 'shortest');
+              if (detour.available) {
+                dijkstraResult = detour;
+                bypassCodes = detour.stations.map((s) => s.code);
+                newAllocatedRoute = [...rawRoute.slice(0, traverseIndex), ...bypassCodes];
+                delayAdded = Math.max(12, Math.round(detour.estimatedDurationMinutes * 0.25));
+              }
+            }
+          }
+
+          if (newAllocatedRoute && newAllocatedRoute.length > 0) {
+            const cleanRoute = newAllocatedRoute.filter(
+              (code, idx) => idx === 0 || code !== newAllocatedRoute[idx - 1],
+            );
+
+            // Ensure both current_station_id and next_station_id belong to active_route for trigger consistency
+            let currentStationCode = null;
+            let nextStationCode = null;
+            if (j.current_code && cleanRoute.includes(j.current_code)) {
+              currentStationCode = j.current_code;
+              const cIdx = cleanRoute.indexOf(j.current_code);
+              nextStationCode = cIdx < cleanRoute.length - 1 ? cleanRoute[cIdx + 1] : cleanRoute[cIdx];
+            } else if (cleanRoute.length > 1) {
+              currentStationCode = cleanRoute[0];
+              nextStationCode = cleanRoute[1];
+            } else if (cleanRoute.length > 0) {
+              currentStationCode = cleanRoute[0];
+              nextStationCode = cleanRoute[0];
+            }
+
+            // Re-allocate train to the newly calculated track route in database
+            await pool.query(
+              `update public.train_journeys
+               set active_route = $1::jsonb,
+                   current_station_id = coalesce((select id from public.stations where station_code = $2), current_station_id),
+                   next_station_id = coalesce((select id from public.stations where station_code = $3), next_station_id),
+                   journey_status = 'REROUTED',
+                   delay_minutes = coalesce(delay_minutes, 0) + $4,
+                   updated_at = now()
+               where id = $5`,
+              [JSON.stringify(cleanRoute), currentStationCode, nextStationCode, delayAdded, j.journey_id],
+            );
+
+            // Record in affected_trains
+            await pool.query(
+              `insert into public.affected_trains (disruption_id, train_journey_id, impact_type, estimated_delay_minutes, status)
+               values ($1, $2, 'DIRECT_TRACK_BLOCK', $3, 'REROUTED')
+               on conflict do nothing`,
+              [rows[0].id, j.journey_id, delayAdded],
+            );
+
+            // Record recommendation as applied
+            await pool.query(
+              `insert into public.route_recommendations
+               (disruption_id, train_journey_id, original_route, recommended_route, distance_km, estimated_travel_minutes, estimated_delay_minutes, score, status)
+               values ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, 100, 'APPLIED')`,
+              [
+                rows[0].id,
+                j.journey_id,
+                JSON.stringify(rawRoute),
+                JSON.stringify(cleanRoute),
+                dijkstraResult.totalDistanceKm || 0,
+                dijkstraResult.estimatedDurationMinutes || 0,
+                delayAdded,
+              ],
+            );
+
+            reroutedJourneys.push({
+              journeyId: j.journey_id,
+              trainNumber: j.train_number,
+              trainName: j.train_name,
+              originalRoute: rawRoute,
+              allocatedRoute: cleanRoute,
+              bypassSegment: bypassCodes,
+              blockedTrack: `${startNode} → ${nextNode}`,
+              distanceKm: dijkstraResult.totalDistanceKm,
+              delayMinutes: delayAdded,
+              reallocated: true,
+            });
+          }
+        }
+      }
+    }
+
+    res.status(201).json({
+      data: rows[0],
+      damagedTrack,
+      affectedCount: reroutedJourneys.length,
+      reroutedJourneys,
+      graphVersion: graphVersion(),
+    });
+  } catch (err) {
+    console.error('POST /conflicts ERROR:', err);
+    next(err);
+  }
+});
 
   router.post('/conflicts/:id/resolve', async (req, res) => {
     const id = z.uuid().parse(req.params.id);
-    const body = resolveConflictSchema.parse(req.body);
+    const body = resolveConflictSchema.parse(req.body || {});
     const {
       rows: [conflict],
     } = await pool.query(`select * from public.disruptions where id=$1`, [id]);
     if (!conflict) return res.status(404).json({ error: 'Conflict not found' });
+
     if (conflict.track_id) {
-      await pool.query(`update public.tracks set status=$1, updated_at=now() where id=$2`, [
-        body.restoreStatus,
-        conflict.track_id,
-      ]);
+      const {
+        rows: [t],
+      } = await pool.query(`select * from public.tracks where id=$1`, [conflict.track_id]);
+      if (t) {
+        await Promise.all(
+          REGION_SCHEMAS.map((schema) =>
+            pool.query(
+              `update ${schema}.tracks set status=$1, updated_at=now()
+               where (from_station_id = $2 and to_station_id = $3)
+                  or (from_station_id = $3 and to_station_id = $2)`,
+              [body.restoreStatus, t.from_station_id, t.to_station_id],
+            ),
+          ),
+        );
+      } else {
+        await Promise.all(
+          REGION_SCHEMAS.map((schema) =>
+            pool.query(`update ${schema}.tracks set status=$1, updated_at=now() where id=$2`, [
+              body.restoreStatus,
+              conflict.track_id,
+            ]),
+          ),
+        );
+      }
     }
     if (conflict.station_id) {
       await pool.query(`update public.stations set status='ACTIVE', updated_at=now() where id=$1`, [
         conflict.station_id,
       ]);
     }
+
+    // Restore any rerouted train journeys associated with this conflict back to their original route
+    const { rows: recs } = await pool.query(
+      `select rr.id as rec_id, rr.train_journey_id, rr.original_route, rr.estimated_delay_minutes,
+              t.train_number, t.name as train_name,
+              cs.station_code as current_code
+       from public.route_recommendations rr
+       join public.train_journeys tj on tj.id = rr.train_journey_id
+       join public.trains t on t.id = tj.train_id
+       left join public.stations cs on cs.id = tj.current_station_id
+       where rr.disruption_id = $1 and rr.status = 'APPLIED'`,
+      [id],
+    );
+
+    const restoredTrains = [];
+    for (const r of recs) {
+      const origRoute = Array.isArray(r.original_route)
+        ? r.original_route
+        : JSON.parse(r.original_route || '[]');
+
+      let origCurrentCode = null;
+      let origNextCode = null;
+      if (r.current_code && origRoute.includes(r.current_code)) {
+        origCurrentCode = r.current_code;
+        const cIdx = origRoute.indexOf(r.current_code);
+        origNextCode = cIdx < origRoute.length - 1 ? origRoute[cIdx + 1] : origRoute[cIdx];
+      } else if (origRoute.length > 1) {
+        origCurrentCode = origRoute[0];
+        origNextCode = origRoute[1];
+      } else if (origRoute.length > 0) {
+        origCurrentCode = origRoute[0];
+        origNextCode = origRoute[0];
+      }
+
+      await pool.query(
+        `update public.train_journeys
+         set active_route = $1::jsonb,
+             current_station_id = coalesce((select id from public.stations where station_code = $2), current_station_id),
+             next_station_id = coalesce((select id from public.stations where station_code = $3), next_station_id),
+             journey_status = 'RUNNING',
+             delay_minutes = greatest(0, coalesce(delay_minutes, 0) - $4),
+             updated_at = now()
+         where id = $5`,
+        [JSON.stringify(origRoute), origCurrentCode, origNextCode, r.estimated_delay_minutes || 0, r.train_journey_id],
+      );
+
+      await pool.query(
+        `update public.route_recommendations
+         set status = 'EXPIRED', updated_at = now()
+         where id = $1`,
+        [r.rec_id],
+      );
+
+      await pool.query(
+        `update public.affected_trains
+         set status = 'CLEARED'
+         where disruption_id = $1 and train_journey_id = $2`,
+        [id, r.train_journey_id],
+      );
+
+      restoredTrains.push({
+        trainNumber: r.train_number,
+        trainName: r.train_name,
+        restoredRoute: origRoute,
+      });
+    }
+
+    // Mark any remaining affected train rows as CLEARED
+    await pool.query(
+      `update public.affected_trains
+       set status = 'CLEARED'
+       where disruption_id = $1`,
+      [id],
+    );
+
     const { rows } = await pool.query(
       `update public.disruptions
        set status='RESOLVED', ended_at=now(), updated_at=now(), description = description || $2
        where id=$1 returning *`,
       [id, `\n\nResolution: ${body.resolutionNote}`],
     );
-    res.json({ data: rows[0], graphVersion: graphVersion() });
+
+    res.json({
+      data: rows[0],
+      restoredTrainsCount: restoredTrains.length,
+      restoredTrains,
+      graphVersion: graphVersion(),
+    });
   });
 
   return router;

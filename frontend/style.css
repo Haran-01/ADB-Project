@@ -1479,15 +1479,31 @@ body {
 
 .admin-blocked-edge {
   stroke: #ef4444;
-  stroke-width: 4;
-  stroke-dasharray: 8 7;
-  opacity: 0.85;
+  stroke-width: 6;
+  stroke-dasharray: 8 6;
+  opacity: 1;
+  animation: adminDashMarch 1.4s linear infinite;
+}
+
+@keyframes adminDashMarch {
+  from {
+    stroke-dashoffset: 28;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 .admin-route-edge {
-  stroke: #48bdf2;
-  stroke-width: 7;
+  stroke: #2563eb;
+  stroke-width: 6;
   stroke-linecap: round;
+}
+
+.admin-detour-edge {
+  stroke: #0284c7;
+  stroke-width: 7;
+  stroke-dasharray: none;
 }
 
 .admin-node {
@@ -1501,7 +1517,21 @@ body {
 }
 
 .admin-node.selected circle {
-  fill: #48bdf2;
+  fill: #60a5fa;
+  stroke: #1d4ed8;
+  stroke-width: 3;
+}
+
+.admin-node.blocked-station circle {
+  fill: #fee2e2;
+  stroke: #ef4444;
+  stroke-width: 3.5;
+}
+
+.admin-node.detour-station circle {
+  fill: #dcfce7;
+  stroke: #16a34a;
+  stroke-width: 3.5;
 }
 
 .admin-node text {
@@ -2318,28 +2348,37 @@ body {
 
 .modal-card.admin-mode .modal-body {
   height: 100vh;
-  max-height: none;
+  max-height: 100vh;
   padding: 0;
   overflow: hidden;
 }
 
-.admin-dashboard-shell {
-  min-height: 100vh;
+#admin-dashboard {
+  height: 100vh;
   width: 100vw;
+  overflow: hidden;
+}
+
+.admin-dashboard-shell {
+  height: 100vh;
+  max-height: 100vh;
+  width: 100vw;
+  overflow: hidden;
   background-color: #ffffff;
 }
 
 .admin-dashboard-shell .admin-side-nav {
   width: 16.5vw;
   min-width: 210px;
-  max-width: 250px;
+  max-width: 240px;
   background-color: #48bdf2;
   border-right: 2px solid #000000;
-  padding: 36px 16px;
+  padding: 28px 16px;
+  overflow-y: auto;
 }
 
 .admin-dashboard-shell .logo-container {
-  margin-bottom: 40px;
+  margin-bottom: 28px;
 }
 
 .admin-dashboard-shell .admin-nav-item svg {
@@ -2358,30 +2397,42 @@ body {
 }
 
 .admin-dashboard-shell .admin-main-wrapper {
-  margin-left: clamp(210px, 16.5vw, 250px);
+  margin-left: clamp(210px, 16.5vw, 240px);
+  height: 100vh;
+  max-height: 100vh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background-color: #ffffff;
 }
 
 .admin-dashboard-shell .admin-topbar {
-  height: 72px;
-  padding: 0 48px;
+  height: 64px;
+  flex-shrink: 0;
+  padding: 0 32px;
   border-bottom: 1px solid #dde3ea;
   box-shadow: none;
 }
 
 .admin-dashboard-shell .admin-main {
-  padding: 28px 48px 60px;
+  flex: 1;
+  min-height: 0;
+  height: calc(100vh - 64px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 20px 32px 48px;
   background-color: #ffffff;
 }
 
 .admin-dashboard-shell .admin-panel-header {
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .admin-dashboard-shell .admin-panel-header h3 {
   margin: 0;
   color: #111111;
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   line-height: 1.25;
 }
@@ -2398,7 +2449,7 @@ body {
 .admin-dashboard-shell .admin-route-details {
   background-color: #ffffff;
   border: 1.5px solid #dde3ea;
-  border-radius: 18px;
+  border-radius: 16px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
 }
 
@@ -2414,7 +2465,7 @@ body {
 .admin-dashboard-shell .admin-graph-card .admin-toolbar {
   position: static;
   min-height: 0;
-  margin-bottom: 18px;
+  margin-bottom: 12px;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -2428,38 +2479,38 @@ body {
   align-items: center;
   gap: 10px;
   color: #111111;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .admin-dashboard-shell .admin-input {
-  min-height: 42px;
+  min-height: 38px;
   border: 1.5px solid #000000;
-  border-radius: 12px;
+  border-radius: 10px;
   background-color: #ffffff;
   box-shadow: 0 2px 0 #000000;
   color: #111111;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  padding: 0 16px;
+  padding: 0 14px;
 }
 
 .admin-dashboard-shell .admin-route-control .admin-input {
-  min-width: 190px;
+  min-width: 170px;
 }
 
 .admin-dashboard-shell .admin-action-btn,
 .admin-dashboard-shell .admin-small-btn {
-  min-height: 42px;
+  min-height: 38px;
   border: 1.5px solid #000000;
-  border-radius: 12px;
+  border-radius: 10px;
   background-color: #ffd43b;
   box-shadow: 0 2.5px 0 #000000;
   color: #111111;
   font-family: 'Poppins', sans-serif;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
-  padding: 0 22px;
+  padding: 0 18px;
   cursor: pointer;
 }
 
@@ -2468,21 +2519,24 @@ body {
 }
 
 .admin-dashboard-shell .admin-message {
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .admin-dashboard-shell .admin-graph-layout {
-  display: block;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
   min-height: 0;
 }
 
 .admin-dashboard-shell .admin-graph-shell {
   min-height: 0;
   margin-top: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  overflow: visible;
+  border: 1.5px solid #dde3ea;
+  border-radius: 14px;
+  background: #f8fafc;
+  overflow: hidden;
   position: relative;
   max-height: none;
   padding: 0;
@@ -2491,32 +2545,39 @@ body {
 .admin-dashboard-shell #admin-network-svg {
   display: block;
   width: 100%;
-  min-height: 0;
+  height: clamp(420px, calc(100vh - 220px), 620px) !important;
+  min-height: 420px;
 }
 
 .admin-dashboard-shell .admin-track-edge {
   stroke: #98a2b3;
-  stroke-width: 1.45;
-  opacity: 0.76;
+  stroke-width: 2;
+  opacity: 0.78;
 }
 
 .admin-dashboard-shell .admin-blocked-edge {
   stroke: #ef4444;
-  stroke-width: 2;
-  stroke-dasharray: 6 6;
-  opacity: 0.9;
+  stroke-width: 6;
+  stroke-dasharray: 8 6;
+  opacity: 1;
+  animation: adminDashMarch 1.4s linear infinite;
 }
 
 .admin-dashboard-shell .admin-region-label {
   fill: #516173;
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 800;
 }
 
 .admin-dashboard-shell .admin-route-edge {
-  stroke: #1173f4;
-  stroke-width: 2.6;
+  stroke: #2563eb;
+  stroke-width: 6;
   stroke-linecap: round;
+}
+
+.admin-dashboard-shell .admin-detour-edge {
+  stroke: #0284c7;
+  stroke-width: 7;
 }
 
 .admin-dashboard-shell .admin-legend {
@@ -2552,7 +2613,7 @@ body {
 }
 
 .admin-dashboard-shell .admin-node text {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -2561,8 +2622,11 @@ body {
 }
 
 .admin-dashboard-shell .admin-route-details {
-  margin-top: 16px;
-  padding: 18px;
+  width: 310px;
+  max-height: clamp(420px, calc(100vh - 220px), 620px);
+  overflow-y: auto;
+  margin-top: 0;
+  padding: 16px;
 }
 
 @media (min-width: 1440px) {

@@ -12,6 +12,7 @@
     "logic:apply": "node scripts/apply-db-logic.mjs",
     "graph:sync": "node scripts/sync-neo4j.mjs",
     "graph:verify": "node scripts/sync-neo4j.mjs --verify",
+    "standalone": "node scripts/standalone-server.mjs",
     "start": "node backend/src/server.js",
     "dev": "nodemon backend/src/server.js",
     "test": "node scripts/verify-schema.mjs",

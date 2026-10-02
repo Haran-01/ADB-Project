@@ -30,6 +30,8 @@ const adminState = {
   draggingNode: null,
   panning: null,
   nodePositions: new Map(),
+  returnView: null,
+  viewingTrain: null,
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1151,7 +1153,10 @@ function loadAdminDashboard() {
         logoutAdmin();
         return;
       }
-      activateAdminView(view);
+      const hasResults =
+        view === 'raise' &&
+        Boolean(document.getElementById('raise-conflict-results-container')?.querySelector('.admin-region-card'));
+      activateAdminView(view, hasResults);
     });
   });
   document.getElementById('admin-user-dashboard')?.addEventListener('click', () => {
@@ -1501,6 +1506,53 @@ function renderAdminGraphPanel() {
   const panel = document.getElementById('admin-view-graph');
   const graph = adminState.graph;
   if (!panel || !graph) return;
+
+  const isInspectingTrain = Boolean(adminState.viewingTrain);
+  const returnTarget = adminState.returnView || (isInspectingTrain ? 'raise' : null);
+
+  const bannerHtml = returnTarget
+    ? `
+      <div class="admin-graph-back-bar" style="display: flex; justify-content: space-between; align-items: center; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 14px; padding: 12px 18px; margin-bottom: 16px; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+          <button id="admin-graph-back-btn" class="btn-yellow-pill" style="cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 800; font-size: 13px; padding: 8px 18px; background: #ffd43b; border: 2px solid #000000; box-shadow: 0 2px 0 #000000;">
+            ⬅ Back to Affected Trains (${returnTarget === 'solve' ? 'Solve Conflicts' : 'Raise Conflict'})
+          </button>
+          ${
+            adminState.viewingTrain?.trainNumber
+              ? `
+            <div>
+              <div style="font-size: 15px; font-weight: 800; color: #0f172a;">
+                Viewing Train #${escapeHTML(adminState.viewingTrain.trainNumber)}: ${escapeHTML(adminState.viewingTrain.trainName)}
+              </div>
+              <div style="font-size: 12px; color: #64748b; font-weight: 600; margin-top: 2px;">
+                Allocated Detour: <strong style="color: #0284c7;">${(adminState.viewingTrain.allocatedRoute || []).join(' ➔ ')}</strong>
+                ${adminState.viewingTrain.delayMinutes ? `(+${adminState.viewingTrain.delayMinutes} mins delay)` : ''}
+              </div>
+            </div>
+          `
+              : adminState.viewingTrain?.blockedFrom
+              ? `
+            <div>
+              <div style="font-size: 15px; font-weight: 800; color: #0f172a;">
+                Inspecting Damaged Track: ${escapeHTML(adminState.viewingTrain.blockedFrom)} ↔ ${escapeHTML(adminState.viewingTrain.blockedTo)}
+              </div>
+            </div>
+          `
+              : ''
+          }
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; flex-wrap: wrap;">
+          <span style="background: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 8px; border: 1px solid #fca5a5; display: inline-flex; align-items: center; gap: 4px;">
+            <span style="font-size: 14px;">⛔</span> Red Dotted = Damaged Track ${adminState.viewingTrain?.blockedFrom ? `(${escapeHTML(adminState.viewingTrain.blockedFrom)} ↔ ${escapeHTML(adminState.viewingTrain.blockedTo)})` : ''}
+          </span>
+          <span style="background: #eff6ff; color: #1d4ed8; padding: 4px 10px; border-radius: 8px; border: 1px solid #bfdbfe; display: inline-flex; align-items: center; gap: 4px;">
+            <span style="font-size: 14px;">➔</span> Blue Arrows = Alternate Connection (Detour)
+          </span>
+        </div>
+      </div>
+    `
+    : '';
+
   const options = graph.nodes
     .slice()
     .sort((a, b) => a.code.localeCompare(b.code))
@@ -1510,6 +1562,7 @@ function renderAdminGraphPanel() {
     )
     .join('');
   panel.innerHTML = `
+    ${bannerHtml}
     <div class="admin-graph-card">
       <div class="admin-toolbar">
         <label class="admin-route-control">
@@ -1531,6 +1584,12 @@ function renderAdminGraphPanel() {
       </div>
     </div>
   `;
+
+  document.getElementById('admin-graph-back-btn')?.addEventListener('click', () => {
+    const target = adminState.returnView || 'raise';
+    activateAdminView(target, true);
+  });
+
   const sourceSelect = document.getElementById('admin-source-station');
   const destinationSelect = document.getElementById('admin-destination-station');
   if (sourceSelect)
@@ -1547,6 +1606,7 @@ function renderAdminGraphPanel() {
   document.getElementById('admin-zoom-out')?.addEventListener('click', () => zoomAdminGraph(1.18));
   document.getElementById('admin-reset-graph')?.addEventListener('click', () => {
     adminState.route = null;
+    adminState.viewingTrain = null;
     adminState.nodePositions = buildAdminGraphLayout(adminState.graph);
     resetAdminGraphViewBox();
     renderAdminGraphPanel();
@@ -1556,13 +1616,21 @@ function renderAdminGraphPanel() {
   });
   sourceSelect?.addEventListener('change', (event) => {
     adminState.selectedSource = event.target.value;
+    adminState.viewingTrain = null;
   });
   destinationSelect?.addEventListener('change', (event) => {
     adminState.selectedDestination = event.target.value;
+    adminState.viewingTrain = null;
   });
-  document.getElementById('admin-visualise-route')?.addEventListener('click', visualiseAdminRoute);
+  document.getElementById('admin-visualise-route')?.addEventListener('click', () => {
+    adminState.viewingTrain = null;
+    visualiseAdminRoute();
+  });
   wireAdminSvgInteractions();
-  if (
+
+  if (adminState.viewingTrain && adminState.route) {
+    renderTrainRouteDetails(adminState.viewingTrain, adminState.route);
+  } else if (
     !adminState.route &&
     !adminState.autoRouteAttempted &&
     sourceSelect?.value &&
@@ -1578,28 +1646,86 @@ function adminGraphSvg() {
   const graph = adminState.graph;
   const routeNodeIds = new Set((adminState.route?.stations || []).map((node) => node.id));
   const nodesByCode = new Map(graph.nodes.map((node) => [node.code, node]));
-  const renderedHeight = Math.round(Math.max(560, Math.min(760, (window.innerHeight || 900) - 190)));
+  const renderedHeight = Math.round(Math.max(440, Math.min(620, (window.innerHeight || 820) - 220)));
+
+  const blockedFrom = adminState.viewingTrain?.blockedFrom;
+  const blockedTo = adminState.viewingTrain?.blockedTo;
+  const damagedPairs = new Set();
+  if (blockedFrom && blockedTo) {
+    damagedPairs.add(`${blockedFrom}-${blockedTo}`);
+    damagedPairs.add(`${blockedTo}-${blockedFrom}`);
+  }
+
+  const damagedBadges = [];
+  const renderedDamagedKeys = new Set();
+
+  const edgeLines = graph.edges
+    .map((edge) => {
+      const source = graph.nodes.find((node) => node.id === edge.source);
+      const target = graph.nodes.find((node) => node.id === edge.target);
+      if (!source || !target) return '';
+      const a = nodePosition(source);
+      const b = nodePosition(target);
+
+      const isBlocked =
+        edge.status === 'BLOCKED' ||
+        damagedPairs.has(`${edge.sourceCode}-${edge.targetCode}`);
+
+      if (isBlocked) {
+        const pairKey = [edge.sourceCode, edge.targetCode].sort().join('-');
+        if (!renderedDamagedKeys.has(pairKey)) {
+          renderedDamagedKeys.add(pairKey);
+          const mx = (a.x + b.x) / 2;
+          const my = (a.y + b.y) / 2;
+          damagedBadges.push(`
+            <g class="admin-damaged-badge" transform="translate(${mx}, ${my})">
+              <rect x="-60" y="-13" width="120" height="26" rx="13" fill="#ef4444" stroke="#ffffff" stroke-width="2.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.25))"></rect>
+              <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff" font-family="sans-serif">⛔ DAMAGED</text>
+            </g>
+          `);
+        }
+        return `<line class="admin-blocked-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" style="stroke: #ef4444; stroke-width: 6; stroke-dasharray: 8 6; opacity: 1;"></line>`;
+      }
+      return `<line class="admin-track-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>`;
+    })
+    .join('');
+
+  let fallbackDamagedEdge = '';
+  if (blockedFrom && blockedTo) {
+    const pairKey = [blockedFrom, blockedTo].sort().join('-');
+    if (!renderedDamagedKeys.has(pairKey)) {
+      const sNode = nodesByCode.get(blockedFrom);
+      const tNode = nodesByCode.get(blockedTo);
+      if (sNode && tNode) {
+        const a = nodePosition(sNode);
+        const b = nodePosition(tNode);
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        renderedDamagedKeys.add(pairKey);
+        fallbackDamagedEdge = `<line class="admin-blocked-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" style="stroke: #ef4444; stroke-width: 6; stroke-dasharray: 8 6; opacity: 1;"></line>`;
+        damagedBadges.push(`
+          <g class="admin-damaged-badge" transform="translate(${mx}, ${my})">
+            <rect x="-60" y="-13" width="120" height="26" rx="13" fill="#ef4444" stroke="#ffffff" stroke-width="2.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.25))"></rect>
+            <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff" font-family="sans-serif">⛔ DAMAGED</text>
+          </g>
+        `);
+      }
+    }
+  }
+
   return `
     <svg id="admin-network-svg" style="height:${renderedHeight}px" viewBox="${adminState.viewBox.x} ${adminState.viewBox.y} ${adminState.viewBox.w} ${adminState.viewBox.h}" role="img" aria-label="Railway graph visualisation">
       <defs>
-        <marker id="route-arrow" markerWidth="5" markerHeight="5" refX="4.6" refY="2.5" orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L5,2.5 L0,5 Z" fill="#1173f4"></path>
+        <marker id="route-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0.5 L5,3 L0,5.5 Z" fill="#2563eb"></path>
         </marker>
       </defs>
       <g class="admin-region-label-layer">
         ${adminRegionLayer()}
       </g>
       <g class="admin-edge-layer">
-        ${graph.edges
-          .map((edge) => {
-            const source = graph.nodes.find((node) => node.id === edge.source);
-            const target = graph.nodes.find((node) => node.id === edge.target);
-            if (!source || !target) return '';
-            const a = nodePosition(source);
-            const b = nodePosition(target);
-            return `<line class="${edge.status === 'ACTIVE' ? 'admin-track-edge' : 'admin-blocked-edge'}" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>`;
-          })
-          .join('')}
+        ${edgeLines}
+        ${fallbackDamagedEdge}
       </g>
       <g class="admin-route-layer">
         ${(adminState.route?.edges || [])
@@ -1610,20 +1736,64 @@ function adminGraphSvg() {
             const a = nodePosition(source);
             const b = nodePosition(target);
             const line = shortenedAdminLine(a, b, 24, 31);
-            return `<line class="admin-route-edge" x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" marker-end="url(#route-arrow)"></line>`;
+            const isDetour =
+              adminState.viewingTrain?.bypassSegment &&
+              adminState.viewingTrain.bypassSegment.includes(edge.sourceCode) &&
+              adminState.viewingTrain.bypassSegment.includes(edge.targetCode);
+            return `
+              <line class="admin-route-edge ${isDetour ? 'admin-detour-edge' : ''}" x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${isDetour ? '#0284c7' : '#2563eb'}" stroke-width="${isDetour ? '7' : '6'}" stroke-linecap="round" marker-end="url(#route-arrow)"></line>
+              ${
+                isDetour
+                  ? `
+                <g transform="translate(${(line.x1 + line.x2) / 2}, ${(line.y1 + line.y2) / 2})">
+                  <rect x="-36" y="-10" width="72" height="20" rx="10" fill="#0284c7" stroke="#ffffff" stroke-width="1.5"></rect>
+                  <text x="0" y="3.5" text-anchor="middle" font-size="9.5" font-weight="800" fill="#ffffff" font-family="sans-serif">DETOUR</text>
+                </g>
+              `
+                  : ''
+              }
+            `;
           })
           .join('')}
+      </g>
+      <g class="admin-damaged-badge-layer">
+        ${damagedBadges.join('')}
       </g>
       <g class="admin-node-layer">
         ${graph.nodes
           .map((node) => {
             const p = nodePosition(node);
             const selected = routeNodeIds.has(node.id);
-            return `<g class="admin-node ${selected ? 'selected' : ''}" data-node-id="${escapeHTML(node.id)}" transform="translate(${p.x} ${p.y})">
-              <circle r="22"></circle>
-              <text text-anchor="middle" dominant-baseline="middle">${escapeHTML(node.code)}</text>
-              <title>${escapeHTML(node.name)} - ${escapeHTML(node.region)}</title>
-            </g>`;
+            const isBlockedStation =
+              (blockedFrom && node.code === blockedFrom) ||
+              (blockedTo && node.code === blockedTo);
+            const isDetourStation =
+              adminState.viewingTrain?.bypassSegment &&
+              adminState.viewingTrain.bypassSegment.includes(node.code) &&
+              !isBlockedStation;
+
+            let extraClass = '';
+            if (isBlockedStation) extraClass = 'blocked-station';
+            else if (isDetourStation) extraClass = 'detour-station';
+            else if (selected) extraClass = 'selected';
+
+            return `
+              <g class="admin-node ${extraClass}" data-node-id="${escapeHTML(node.id)}" transform="translate(${p.x} ${p.y})">
+                <circle r="22"></circle>
+                <text text-anchor="middle" dominant-baseline="middle">${escapeHTML(node.code)}</text>
+                <title>${escapeHTML(node.name)} (${escapeHTML(node.code)}) - ${escapeHTML(node.region)}${isBlockedStation ? ' [DAMAGED TRACK STATION]' : ''}${isDetourStation ? ' [ALTERNATE BYPASS STATION]' : ''}</title>
+              </g>
+              ${
+                isDetourStation
+                  ? `
+                <g transform="translate(${p.x}, ${p.y - 28})">
+                  <rect x="-34" y="-8" width="68" height="16" rx="8" fill="#16a34a" stroke="#ffffff" stroke-width="1"></rect>
+                  <text x="0" y="3" text-anchor="middle" font-size="8.5" font-weight="800" fill="#ffffff" font-family="sans-serif">BYPASS</text>
+                </g>
+              `
+                  : ''
+              }
+            `;
           })
           .join('')}
       </g>
@@ -1775,6 +1945,7 @@ async function visualiseAdminRoute() {
 function renderRouteDetails(route) {
   const details = document.getElementById('admin-route-details');
   if (!details) return;
+  details.classList.remove('hidden');
   if (!route.available) {
     details.innerHTML = `<h4>No route available</h4><p>${escapeHTML(route.reason || 'Stations are disconnected.')}</p>`;
     return;
@@ -1797,6 +1968,7 @@ function showAdminNodeDetails(nodeId) {
   const node = adminState.graph?.nodes.find((n) => n.id === nodeId);
   const details = document.getElementById('admin-route-details');
   if (!node || !details) return;
+  details.classList.remove('hidden');
   const connections = adminState.graph.edges.filter(
     (edge) => edge.source === node.id || edge.target === node.id,
   );
@@ -1816,14 +1988,20 @@ function showAdminNodeDetails(nodeId) {
   `;
 }
 
-function activateAdminView(view) {
+function activateAdminView(view, preserveState = false) {
   const adminDash = document.getElementById('admin-dashboard');
   if (!adminDash) return;
   adminDash.querySelectorAll('.admin-nav-item').forEach((button) => {
     button.classList.toggle('active', button.getAttribute('data-admin-view') === view);
   });
   adminDash.querySelectorAll('.admin-view').forEach((panel) => panel.classList.add('hidden'));
-  document.getElementById(`admin-view-${view}`)?.classList.remove('hidden');
+  const targetPanel = document.getElementById(`admin-view-${view}`);
+  targetPanel?.classList.remove('hidden');
+
+  if (preserveState && targetPanel && targetPanel.innerHTML.trim().length > 0) {
+    return;
+  }
+
   if (view === 'graph') loadAdminGraph();
   if (view === 'regions') loadAdminRegions();
   if (view === 'raise') loadRaiseConflict();
@@ -1844,19 +2022,856 @@ function adminConflictTarget(conflict) {
   return 'Network target';
 }
 
+
 async function loadAdminRegions() {
   const panel = document.getElementById('admin-view-regions');
-  if (panel) panel.innerHTML = '';
+  if (!panel) return;
+  panel.innerHTML = `<div class="loading-state" style="padding: 24px; color: #64748b; font-weight: 500;">Loading regional database shards...</div>`;
+  try {
+    const json = await adminFetch('/api/admin/regions');
+    const regions = json.data || [];
+
+    const schemaMap = {
+      SR: 'railway_south',
+      CR: 'railway_central',
+      NR: 'railway_north',
+    };
+
+    const totalStations = regions.reduce((sum, r) => sum + (r.stations || 0), 0);
+    const totalTracks = regions.reduce((sum, r) => sum + (r.tracks || 0), 0);
+    const totalActiveTrains = regions.reduce((sum, r) => sum + (r.activeTrains || 0), 0);
+    const totalOpenConflicts = regions.reduce((sum, r) => sum + (r.openConflicts || 0), 0);
+
+    panel.innerHTML = `
+      <div class="admin-panel-header" style="margin-bottom: 20px;">
+        <div>
+          <h3>Regional Database Shards</h3>
+          <p>Distributed horizontal fragmentation across Indian Railways regional database nodes</p>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 14px; margin-bottom: 24px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Active Shards</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${regions.length} <span style="font-size: 13px; font-weight: 600; color: #10a52a;">Online</span></div>
+        </div>
+        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Total Stations</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalStations}</div>
+        </div>
+        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Total Track Segments</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalTracks}</div>
+        </div>
+        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Running Trains</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalActiveTrains}</div>
+        </div>
+        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Open Conflicts</div>
+          <div style="font-size: 24px; font-weight: 800; color: ${totalOpenConflicts > 0 ? '#ef4444' : '#10a52a'}; margin-top: 4px;">${totalOpenConflicts}</div>
+        </div>
+      </div>
+
+      <div class="admin-region-grid">
+        ${regions
+          .map((r) => {
+            const schema = schemaMap[r.code] || `railway_${r.code.toLowerCase()}`;
+            return `
+            <div class="admin-region-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+              <div>
+                <div class="admin-card-topline" style="margin-bottom: 14px;">
+                  <div>
+                    <h4 style="margin: 0; font-size: 17px; font-weight: 800; color: #111111;">${escapeHTML(r.name)} Railway (${escapeHTML(r.code)})</h4>
+                    <p style="margin: 3px 0 0; font-size: 12px; color: #64748b; font-weight: 600;">Schema: <code>${escapeHTML(schema)}</code></p>
+                  </div>
+                  <span class="badge-green" style="background: #e8f9ee; color: #10a52a; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; border: 1px solid #c2f0cc;">${escapeHTML(r.status)}</span>
+                </div>
+
+                <div class="stats-grid" style="margin-bottom: 16px;">
+                  <div class="stat-box">
+                    <h5>Stations</h5>
+                    <p>${r.stations}</p>
+                  </div>
+                  <div class="stat-box">
+                    <h5>Tracks</h5>
+                    <p>${r.tracks}</p>
+                  </div>
+                  <div class="stat-box">
+                    <h5>Active Trains</h5>
+                    <p>${r.activeTrains}</p>
+                  </div>
+                </div>
+
+                <div style="margin-bottom: 12px; font-size: 13px;">
+                  <span style="font-weight: 700; color: #334155;">Connected Regions:</span>
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
+                    ${
+                      r.connectedRegions?.length
+                        ? r.connectedRegions
+                            .map(
+                              (cr) =>
+                                `<span style="background: #e0f2fe; color: #0284c7; padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; border: 1px solid #bae6fd;">${escapeHTML(cr)}</span>`,
+                            )
+                            .join('')
+                        : '<span style="color: #94a3b8; font-size: 12px;">None (isolated)</span>'
+                    }
+                  </div>
+                </div>
+              </div>
+
+              <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12px; font-weight: 600; color: ${r.openConflicts > 0 ? '#ef4444' : '#10a52a'};">
+                  ${r.openConflicts > 0 ? `⚠️ ${r.openConflicts} conflict(s) active` : '✓ All lines clear'}
+                </span>
+                <button class="admin-small-btn view-region-graph-btn" data-region-code="${escapeHTML(r.code)}" style="font-size: 12px; padding: 4px 12px; min-height: 32px;">
+                  Filter Graph
+                </button>
+              </div>
+            </div>
+          `;
+          })
+          .join('')}
+      </div>
+    `;
+
+    panel.querySelectorAll('.view-region-graph-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const code = btn.getAttribute('data-region-code');
+        activateAdminView('graph');
+        loadAdminGraph(code);
+      });
+    });
+  } catch (error) {
+    panel.innerHTML = `
+      <div class="admin-panel-header">
+        <div>
+          <h3>Regional Database Shards</h3>
+          <p>Distributed horizontal fragmentation across Indian Railways regional database nodes</p>
+        </div>
+      </div>
+      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px; margin-top: 16px;">
+        Failed to load regional database statistics: ${escapeHTML(error.message || 'Server error')}
+      </div>
+    `;
+  }
 }
 
 async function loadRaiseConflict() {
   const panel = document.getElementById('admin-view-raise');
-  if (panel) panel.innerHTML = '';
+  if (!panel) return;
+
+  panel.innerHTML = `<div class="loading-state" style="padding: 24px; color: #64748b; font-weight: 500;">Loading available railway tracks...</div>`;
+
+  try {
+    const json = await adminFetch('/api/admin/tracks');
+    const tracks = (json.data || []).filter((t) => t.status === 'ACTIVE');
+
+    panel.innerHTML = `
+      <div class="admin-panel-header" style="margin-bottom: 20px;">
+        <div>
+          <h3>Raise Track Conflict & Auto-Allocate Route</h3>
+          <p>Simulate damaged track and automatically allocate trains to the nearest alternate track using Dijkstra's algorithm</p>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(320px, 370px) minmax(0, 1fr); gap: 20px; align-items: start;">
+        <!-- Left: Conflict Form -->
+        <div class="admin-region-card" style="padding: 18px; position: sticky; top: 0;">
+          <h4 style="margin: 0 0 16px; font-size: 16px; font-weight: 800; color: #111111;">1. Select Damaged Track</h4>
+          <form id="raise-conflict-form" autocomplete="off">
+            <div style="margin-bottom: 14px;">
+              <label for="raise-track-id" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                Track Segment to Damage:
+              </label>
+              <select id="raise-track-id" class="admin-input" style="width: 100%;" required>
+                <option value="">-- Choose Track Segment --</option>
+                ${tracks
+                  .map(
+                    (t) => `
+                  <option value="${escapeHTML(t.id)}" data-from="${escapeHTML(t.from_station_code)}" data-to="${escapeHTML(t.to_station_code)}">
+                    [${escapeHTML(t.region_code)}] ${escapeHTML(t.from_station_code)} → ${escapeHTML(t.to_station_code)} (${t.distance_km} km, ${escapeHTML(t.from_station_name)} to ${escapeHTML(t.to_station_name)})
+                  </option>
+                `,
+                  )
+                  .join('')}
+              </select>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+              <div>
+                <label for="raise-conflict-type" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                  Conflict Type:
+                </label>
+                <select id="raise-conflict-type" class="admin-input" style="width: 100%;">
+                  <option value="TRACK_FAILURE" selected>Track Damage / Fracture</option>
+                  <option value="ROUTE_BLOCKAGE">Route Blockage</option>
+                  <option value="ACCIDENT">Accident / Derailment</option>
+                  <option value="MAINTENANCE">Emergency Maintenance</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="raise-conflict-severity" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                  Severity:
+                </label>
+                <select id="raise-conflict-severity" class="admin-input" style="width: 100%;">
+                  <option value="CRITICAL">CRITICAL</option>
+                  <option value="HIGH" selected>HIGH</option>
+                  <option value="MEDIUM">MEDIUM</option>
+                  <option value="LOW">LOW</option>
+                </select>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 14px;">
+              <label for="raise-conflict-title" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                Incident Title:
+              </label>
+              <input type="text" id="raise-conflict-title" class="admin-input" style="width: 100%;" value="Track Fracture & Physical Rail Damage" required />
+            </div>
+
+            <div style="margin-bottom: 16px;">
+              <label for="raise-conflict-desc" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                Description / Sensor Log:
+              </label>
+              <textarea id="raise-conflict-desc" class="admin-input" rows="3" style="width: 100%; height: auto; padding: 10px 14px; font-family: inherit;">Track sensor detected rail distortion. Track segment rendered impassable. Immediate bypass reallocation needed.</textarea>
+            </div>
+
+            <div style="margin-bottom: 20px; background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 12px; padding: 12px 14px;">
+              <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="raise-auto-allocate" checked style="margin-top: 3px; accent-color: #10a52a; transform: scale(1.15);" />
+                <div>
+                  <div style="font-size: 13px; font-weight: 700; color: #166534;">Auto-Allocate Nearest Track (Dijkstra)</div>
+                  <div style="font-size: 12px; color: #4b7c59; margin-top: 2px;">
+                    Automatically recalculates shortest bypass route and updates train journeys in database.
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            <div id="raise-conflict-error" class="hidden" style="margin-bottom: 14px; padding: 10px 14px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 10px; color: #ef4444; font-size: 13px;"></div>
+
+            <button type="submit" id="btn-submit-raise-conflict" class="admin-action-btn" style="width: 100%; background: #ef4444; color: #ffffff; border-color: #b91c1c; box-shadow: 0 3px 0 #991b1b; font-size: 15px; padding: 12px;">
+              🚨 Raise Conflict & Auto-Allocate
+            </button>
+          </form>
+        </div>
+
+        <!-- Right: Results & Re-allocation Visualizer -->
+        <div id="raise-conflict-results-container">
+          <div class="admin-region-card" style="padding: 24px; text-align: center; border-style: dashed;">
+            <div style="font-size: 40px; margin-bottom: 12px;">🛤️</div>
+            <h4 style="margin: 0 0 8px; font-size: 17px; font-weight: 700; color: #111111;">Automated Rerouting Ready</h4>
+            <p style="margin: 0; font-size: 13px; color: #64748b; max-width: 440px; margin: 0 auto; line-height: 1.5;">
+              Select a damaged track on the left and click <strong>Raise Conflict & Auto-Allocate</strong>.
+              The system will block the track in the database, detect any affected trains, and apply Dijkstra's algorithm to allocate the nearest alternate bypass track automatically.
+            </p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const form = document.getElementById('raise-conflict-form');
+    const resultsContainer = document.getElementById('raise-conflict-results-container');
+    const errorBox = document.getElementById('raise-conflict-error');
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const trackId = document.getElementById('raise-track-id').value;
+      const conflictType = document.getElementById('raise-conflict-type').value;
+      const severity = document.getElementById('raise-conflict-severity').value;
+      const title = document.getElementById('raise-conflict-title').value.trim();
+      const description = document.getElementById('raise-conflict-desc').value.trim();
+      const autoAllocate = document.getElementById('raise-auto-allocate').checked;
+
+      if (!trackId) {
+        errorBox.textContent = 'Please choose a track segment.';
+        errorBox.classList.remove('hidden');
+        return;
+      }
+      errorBox.classList.add('hidden');
+
+      const submitBtn = document.getElementById('btn-submit-raise-conflict');
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Calculating Dijkstra Bypass...';
+
+      try {
+        const response = await adminFetch('/api/admin/conflicts', {
+          method: 'POST',
+          body: JSON.stringify({
+            trackId,
+            conflictType,
+            severity,
+            title,
+            description,
+            autoAllocate,
+          }),
+        });
+
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🚨 Raise Conflict & Auto-Allocate';
+
+        const result = response;
+        renderRaiseConflictResults(result, resultsContainer);
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '🚨 Raise Conflict & Auto-Allocate';
+        errorBox.textContent = err.message || 'Failed to raise conflict';
+        errorBox.classList.remove('hidden');
+      }
+    });
+  } catch (error) {
+    panel.innerHTML = `
+      <div class="admin-panel-header" style="margin-bottom: 20px;">
+        <div>
+          <h3>Raise Track Conflict & Auto-Allocate Route</h3>
+          <p>Simulate damaged track and automatically allocate trains to the nearest alternate track using Dijkstra's algorithm</p>
+        </div>
+      </div>
+      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px;">
+        Failed to load tracks: ${escapeHTML(error.message || 'Server error')}
+      </div>
+    `;
+  }
 }
+
+function renderRaiseConflictResults(result, container) {
+  if (!container) return;
+
+  const track = result.damagedTrack || {};
+  const rerouted = result.reroutedJourneys || [];
+  const conflict = result.data || {};
+
+  container.innerHTML = `
+    <div class="admin-region-card" style="padding: 24px; border: 2px solid #ef4444; margin-bottom: 16px;">
+      <div class="admin-card-topline" style="margin-bottom: 16px;">
+        <div>
+          <span style="background: #fee2e2; color: #dc2626; padding: 4px 12px; border-radius: 14px; font-size: 12px; font-weight: 800; border: 1px solid #fca5a5;">
+            ⚠️ CONFLICT LOGGED & TRACK BLOCKED
+          </span>
+          <h4 style="margin: 8px 0 2px; font-size: 18px; font-weight: 800; color: #111111;">
+            ${escapeHTML(track.from_code || '')} ➔ ${escapeHTML(track.to_code || '')} Disabled
+          </h4>
+          <p style="margin: 0; font-size: 12px; color: #64748b;">
+            Physical status set to <strong>BLOCKED</strong> in regional database shard.
+          </p>
+        </div>
+        <div style="text-align: right;">
+          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Disruption ID</div>
+          <code style="font-size: 12px; color: #111;">${escapeHTML(String(conflict.id || '').slice(0, 8))}...</code>
+        </div>
+      </div>
+
+      <div style="background: #f8fafc; border-radius: 12px; padding: 14px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
+        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+          <div>
+            <span style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Affected Trains</span>
+            <div style="font-size: 20px; font-weight: 800; color: ${rerouted.length > 0 ? '#dc2626' : '#10a52a'};">
+              ${rerouted.length} ${rerouted.length === 1 ? 'Train' : 'Trains'}
+            </div>
+          </div>
+          <div style="border-left: 1px solid #cbd5e1; padding-left: 16px;">
+            <span style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Rerouting Algorithm</span>
+            <div style="font-size: 15px; font-weight: 700; color: #0284c7;">
+              ⚡ Dijkstra Shortest Path
+            </div>
+          </div>
+          <div style="border-left: 1px solid #cbd5e1; padding-left: 16px;">
+            <span style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Database Action</span>
+            <div style="font-size: 15px; font-weight: 700; color: #10a52a;">
+              ✓ Auto-Allocated & Saved
+            </div>
+          </div>
+        </div>
+      </div>
+
+      ${
+        rerouted.length > 0
+          ? `
+        <h4 style="margin: 0 0 12px; font-size: 15px; font-weight: 800; color: #111111;">
+          Rerouted Train Schedules (Database Updated)
+        </h4>
+        <div style="display: grid; gap: 14px;">
+          ${rerouted
+            .map(
+              (r) => `
+            <div style="background: #ffffff; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div>
+                  <span style="font-size: 15px; font-weight: 800; color: #0f172a;">Train #${escapeHTML(r.trainNumber)}</span>
+                  <span style="font-size: 13px; font-weight: 600; color: #475569; margin-left: 8px;">${escapeHTML(r.trainName)}</span>
+                </div>
+                <span style="background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; border: 1px solid #bbf7d0;">
+                  ✓ REROUTED
+                </span>
+              </div>
+
+              <!-- Route Comparison -->
+              <div style="margin-bottom: 12px;">
+                <div style="font-size: 11px; font-weight: 700; color: #ef4444; text-transform: uppercase; margin-bottom: 4px;">
+                  Original Route (Track Blocked):
+                </div>
+                <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 600; color: #64748b;">
+                  ${r.originalRoute
+                    .map((code, idx) => {
+                      const isBlocked =
+                        (code === track.from_code && r.originalRoute[idx + 1] === track.to_code) ||
+                        (code === track.to_code && r.originalRoute[idx - 1] === track.from_code);
+                      return `
+                      <span style="${isBlocked ? 'background: #fee2e2; color: #dc2626; text-decoration: line-through; border: 1px solid #fca5a5;' : 'background: #f1f5f9; color: #475569;'} padding: 2px 7px; border-radius: 6px;">
+                        ${escapeHTML(code)}
+                      </span>
+                      ${idx < r.originalRoute.length - 1 ? '<span style="color: #cbd5e1;">➔</span>' : ''}
+                    `;
+                    })
+                    .join('')}
+                </div>
+              </div>
+
+              <div style="margin-bottom: 14px;">
+                <div style="font-size: 11px; font-weight: 700; color: #16a34a; text-transform: uppercase; margin-bottom: 4px;">
+                  Allocated Alternate Route (Dijkstra Shortest Path):
+                </div>
+                <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 700;">
+                  ${r.allocatedRoute
+                    .map((code, idx) => {
+                      const isBypass = (r.bypassSegment || []).includes(code);
+                      return `
+                      <span style="${isBypass ? 'background: #dbeafe; color: #1d4ed8; border: 1.5px solid #93c5fd;' : 'background: #f8fafc; color: #334155; border: 1px solid #e2e8f0;'} padding: 2px 8px; border-radius: 6px;">
+                        ${escapeHTML(code)}
+                      </span>
+                      ${idx < r.allocatedRoute.length - 1 ? '<span style="color: #0284c7;">➔</span>' : ''}
+                    `;
+                    })
+                    .join('')}
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-top: 1px solid #f1f5f9; padding-top: 10px;">
+                <div style="display: flex; gap: 14px; color: #475569;">
+                  <span><strong>Bypass Distance:</strong> ${r.distanceKm} km</span>
+                  <span><strong>Delay Incurred:</strong> +${r.delayMinutes} mins</span>
+                </div>
+                <button class="admin-small-btn view-reroute-graph-btn" data-train-number="${escapeHTML(r.trainNumber)}" data-train-name="${escapeHTML(r.trainName)}" data-allocated-route='${JSON.stringify(r.allocatedRoute)}' data-original-route='${JSON.stringify(r.originalRoute)}' data-bypass-segment='${JSON.stringify(r.bypassSegment || [])}' data-blocked-from="${escapeHTML(track.from_code || '')}" data-blocked-to="${escapeHTML(track.to_code || '')}" data-delay-minutes="${escapeHTML(String(r.delayMinutes || 0))}" data-distance-km="${escapeHTML(String(r.distanceKm || 0))}" style="font-size: 11px; padding: 5px 12px; min-height: 28px; cursor: pointer; background: #ffd43b; font-weight: 800; border: 1.5px solid #000; box-shadow: 0 2px 0 #000;">
+                  Visualise in Graph ➔
+                </button>
+              </div>
+            </div>
+          `,
+            )
+            .join('')}
+        </div>
+      `
+          : `
+        <div style="padding: 16px; background: #f8fafc; border-radius: 12px; text-align: center; color: #64748b; font-size: 13px;">
+          ✓ Track has been blocked successfully. No trains were currently scheduled across this track segment.
+        </div>
+      `
+      }
+    </div>
+  `;
+
+  container.querySelectorAll('.view-reroute-graph-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const trainNumber = btn.getAttribute('data-train-number');
+      const trainName = btn.getAttribute('data-train-name');
+      const allocatedRoute = JSON.parse(btn.getAttribute('data-allocated-route') || '[]');
+      const originalRoute = JSON.parse(btn.getAttribute('data-original-route') || '[]');
+      const bypassSegment = JSON.parse(btn.getAttribute('data-bypass-segment') || '[]');
+      const blockedFrom = btn.getAttribute('data-blocked-from');
+      const blockedTo = btn.getAttribute('data-blocked-to');
+      const delayMinutes = Number(btn.getAttribute('data-delay-minutes') || 0);
+      const distanceKm = Number(btn.getAttribute('data-distance-km') || 0);
+
+      adminState.returnView = 'raise';
+      adminState.viewingTrain = {
+        trainNumber,
+        trainName,
+        allocatedRoute,
+        originalRoute,
+        bypassSegment,
+        blockedFrom,
+        blockedTo,
+        delayMinutes,
+        distanceKm,
+      };
+
+      if (allocatedRoute.length >= 2) {
+        adminState.selectedSource = allocatedRoute[0];
+        adminState.selectedDestination = allocatedRoute[allocatedRoute.length - 1];
+      }
+
+      activateAdminView('graph');
+      showTrainInGraph(adminState.viewingTrain);
+    });
+  });
+}
+
+
+async function showTrainInGraph(train) {
+  if (!adminState.graph) {
+    await loadAdminGraph();
+  } else {
+    try {
+      const graphJson = await adminFetch('/api/admin/graph');
+      adminState.graph = graphJson.data;
+      adminState.nodePositions = buildAdminGraphLayout(adminState.graph);
+    } catch (_) {}
+  }
+
+  const graph = adminState.graph;
+  if (!graph) return;
+
+  const nodesByCode = new Map(graph.nodes.map((node) => [node.code, node]));
+  const stations = (train.allocatedRoute || [])
+    .map((code) => nodesByCode.get(code))
+    .filter(Boolean);
+
+  const edges = [];
+  for (let i = 0; i < (train.allocatedRoute || []).length - 1; i++) {
+    edges.push({
+      sourceCode: train.allocatedRoute[i],
+      targetCode: train.allocatedRoute[i + 1],
+    });
+  }
+
+  adminState.route = {
+    available: true,
+    source: train.allocatedRoute[0] || adminState.selectedSource,
+    destination: train.allocatedRoute.at(-1) || adminState.selectedDestination,
+    totalDistanceKm: train.distanceKm || 0,
+    estimatedDurationMinutes: train.delayMinutes || 0,
+    stopCount: stations.length,
+    regionsCrossed: [...new Set(stations.map((s) => s.regionCode || s.region))],
+    stations,
+    edges,
+  };
+
+  renderAdminGraphPanel();
+  renderTrainRouteDetails(train, adminState.route);
+}
+
+function renderTrainRouteDetails(train, route) {
+  const details = document.getElementById('admin-route-details');
+  if (!details) return;
+  details.classList.remove('hidden');
+
+  details.innerHTML = `
+    <div style="background: #ffffff; border-radius: 12px; padding: 4px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1.5px solid #e2e8f0; padding-bottom: 10px;">
+        <div>
+          <span style="font-size: 11px; font-weight: 800; background: #fee2e2; color: #dc2626; padding: 2px 8px; border-radius: 6px; border: 1px solid #fca5a5;">
+            ⛔ TRACK REROUTING
+          </span>
+          <h4 style="margin: 6px 0 2px; font-size: 16px; font-weight: 800; color: #0f172a;">
+            Train #${escapeHTML(train.trainNumber)}
+          </h4>
+          <div style="font-size: 12.5px; font-weight: 600; color: #475569;">
+            ${escapeHTML(train.trainName)}
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 12px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 8px; padding: 8px 12px; font-size: 12px;">
+        <span style="font-weight: 700; color: #dc2626;">Damaged Impassable Track:</span>
+        <div style="font-weight: 800; color: #991b1b; margin-top: 2px;">
+          ${escapeHTML(train.blockedFrom)} ↔ ${escapeHTML(train.blockedTo)} (BLOCKED)
+        </div>
+      </div>
+
+      <div style="margin-bottom: 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px; font-size: 12px;">
+        <span style="font-weight: 700; color: #1d4ed8;">Alternate Detour Path Allocated:</span>
+        <div style="font-weight: 800; color: #1e40af; margin-top: 2px;">
+          ${(train.bypassSegment || []).join(' ➔ ')}
+        </div>
+        <div style="font-size: 11px; color: #3b82f6; margin-top: 3px;">
+          Bypass Delay: +${escapeHTML(String(train.delayMinutes || 0))} mins | Distance: ${escapeHTML(String(train.distanceKm || 0))} km
+        </div>
+      </div>
+
+      <h5 style="margin: 12px 0 6px; font-size: 12px; font-weight: 800; color: #334155; text-transform: uppercase;">
+        Full Scheduled Route Stations (${route.stations.length})
+      </h5>
+      <ol class="admin-route-list">
+        ${route.stations
+          .map((st) => {
+            const isBypass = (train.bypassSegment || []).includes(st.code);
+            return `
+              <li style="${isBypass ? 'background: #eff6ff; padding: 3px 6px; border-radius: 6px; font-weight: 700;' : ''}">
+                <strong>${escapeHTML(st.code)}</strong> ${escapeHTML(st.name)}
+                ${isBypass ? '<span style="font-size: 10px; background: #2563eb; color: #fff; padding: 1px 6px; border-radius: 8px; margin-left: 6px;">Detour Station</span>' : ''}
+              </li>
+            `;
+          })
+          .join('')}
+      </ol>
+    </div>
+  `;
+}
+
 
 async function loadSolveConflict() {
   const panel = document.getElementById('admin-view-solve');
-  if (panel) panel.innerHTML = '';
+  if (!panel) return;
+
+  panel.innerHTML = `<div class="loading-state" style="padding: 24px; color: #64748b; font-weight: 500;">Loading active track conflicts...</div>`;
+
+  try {
+    const json = await adminFetch('/api/admin/conflicts?status=OPEN');
+    const conflicts = json.data || [];
+
+    if (conflicts.length === 0) {
+      panel.innerHTML = `
+        <div class="admin-panel-header" style="margin-bottom: 20px;">
+          <div>
+            <h3>Active Track Conflicts & Network Disruptions</h3>
+            <p>Review open conflicts, damaged tracks, and undo/restore them to normalize train schedules</p>
+          </div>
+          <button class="admin-small-btn" id="refresh-solve-conflicts" style="display: inline-flex; align-items: center; gap: 6px;">
+            🔄 Refresh
+          </button>
+        </div>
+
+        <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 14px; padding: 48px 24px; text-align: center; max-width: 640px; margin: 20px auto 0;">
+          <div style="font-size: 44px; margin-bottom: 14px;">✅</div>
+          <h4 style="margin: 0 0 10px; font-size: 19px; font-weight: 800; color: #166534;">All Railway Tracks Clear</h4>
+          <p style="margin: 0 auto 20px; font-size: 13.5px; color: #15803d; line-height: 1.6;">
+            There are currently no active conflicts or track damages. All train journeys are operating on their normal scheduled routes across all regional shards.
+          </p>
+          <button class="btn-yellow-pill" id="goto-raise-btn" style="padding: 9px 24px; font-size: 13px; font-weight: 800; cursor: pointer;">
+            Simulate Track Conflict ➔
+          </button>
+        </div>
+      `;
+
+      document.getElementById('refresh-solve-conflicts')?.addEventListener('click', loadSolveConflict);
+      document.getElementById('goto-raise-btn')?.addEventListener('click', () => {
+        activateAdminView('raise');
+      });
+      return;
+    }
+
+    const totalAffected = conflicts.reduce((sum, c) => sum + (c.affected_count || 0), 0);
+
+    panel.innerHTML = `
+      <div class="admin-panel-header" style="margin-bottom: 20px;">
+        <div>
+          <h3>Active Track Conflicts & Network Disruptions</h3>
+          <p>Review open conflicts, damaged tracks, and undo/restore them to normalize train schedules</p>
+        </div>
+        <button class="admin-small-btn" id="refresh-solve-conflicts" style="display: inline-flex; align-items: center; gap: 6px;">
+          🔄 Refresh
+        </button>
+      </div>
+
+      <div id="solve-alert-container" style="margin-bottom: 18px;"></div>
+
+      <div style="display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 160px; background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #e11d48; text-transform: uppercase;">Open Conflicts</div>
+          <div style="font-size: 24px; font-weight: 800; color: #be123c; margin-top: 4px;">${conflicts.length} <span style="font-size: 13px; font-weight: 600;">Active</span></div>
+        </div>
+        <div style="flex: 1; min-width: 160px; background: #fefce8; border: 1.5px solid #fef08a; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #ca8a04; text-transform: uppercase;">Rerouted Trains</div>
+          <div style="font-size: 24px; font-weight: 800; color: #a16207; margin-top: 4px;">${totalAffected}</div>
+        </div>
+        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Network State</div>
+          <div style="font-size: 24px; font-weight: 800; color: #dc2626; margin-top: 4px;">DISRUPTED</div>
+        </div>
+      </div>
+
+      <div class="admin-conflict-list">
+        ${conflicts
+          .map((c) => {
+            const hasTrack = c.from_station && c.to_station;
+            const targetLabel = hasTrack
+              ? `Track Segment: [${escapeHTML(c.from_station)}] ${escapeHTML(c.from_station_name || '')} ➔ [${escapeHTML(c.to_station)}] ${escapeHTML(c.to_station_name || '')}`
+              : c.station_code
+              ? `Station: [${escapeHTML(c.station_code)}] ${escapeHTML(c.station_name || '')}`
+              : 'Network Target';
+
+            return `
+            <div class="admin-conflict-card" id="conflict-card-${escapeHTML(c.id)}" style="box-shadow: 0 2px 10px rgba(0,0,0,0.03);">
+              <div class="admin-card-topline" style="margin-bottom: 12px;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;">
+                    <h4 style="margin: 0; font-size: 16px;">${escapeHTML(c.title || c.conflict_type || 'Track Disruption')}</h4>
+                    <span class="${adminSeverityBadge(c.severity)}" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700;">
+                      ${escapeHTML(c.severity || 'HIGH')}
+                    </span>
+                    <span style="background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; border: 1px solid #fca5a5;">
+                      ● OPEN DISRUPTION
+                    </span>
+                  </div>
+                  <div style="font-size: 13px; font-weight: 700; color: #0284c7; margin-top: 4px;">
+                    ${targetLabel}
+                  </div>
+                </div>
+                <div style="text-align: right; font-size: 11px; color: #64748b; font-weight: 600;">
+                  Reported: ${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, ${new Date(c.created_at).toLocaleDateString()}
+                </div>
+              </div>
+
+              <div class="admin-conflict-meta" style="margin: 8px 0 12px; font-size: 12px;">
+                <span style="background: #f1f5f9; padding: 4px 10px; border-radius: 8px; font-weight: 600; color: #334155;">
+                  <strong>Type:</strong> ${escapeHTML(c.conflict_type)}
+                </span>
+                <span style="background: #fef3c7; color: #b45309; padding: 4px 10px; border-radius: 8px; font-weight: 700; border: 1px solid #fde68a;">
+                  ⚠️ ${c.affected_count || 0} Train(s) Rerouted
+                </span>
+                ${c.track_id ? `<span style="background: #f1f5f9; padding: 4px 10px; border-radius: 8px; font-weight: 600; color: #64748b;">Track ID: <code>${escapeHTML(c.track_id.substring(0, 8))}...</code></span>` : ''}
+              </div>
+
+              ${
+                c.description
+                  ? `<div class="admin-conflict-description" style="margin-bottom: 16px; padding: 10px 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12.5px; color: #475569; line-height: 1.5;">
+                      ${escapeHTML(c.description)}
+                    </div>`
+                  : ''
+              }
+
+              <!-- Resolution / Undo Action Box -->
+              <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 10px; padding: 14px; margin-top: 10px;">
+                <div style="font-size: 12px; font-weight: 700; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">
+                  Undo Conflict & Track Restoration Action:
+                </div>
+                <div class="admin-resolve-row" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                  <input
+                    type="text"
+                    id="note-${escapeHTML(c.id)}"
+                    class="admin-input admin-resolution-note"
+                    placeholder="Resolution note (e.g. Track welded and inspected)..."
+                    value="Track repaired and safety inspected. Resuming normal operations."
+                    style="flex: 1; min-width: 240px; font-size: 12px;"
+                  />
+                  <button
+                    class="admin-action-btn undo-conflict-btn"
+                    data-id="${escapeHTML(c.id)}"
+                    style="background: #10b981; color: #ffffff; border: 1.5px solid #000000; box-shadow: 0 2.5px 0 #000000; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 16px;"
+                  >
+                    <span>🔧</span> Undo Conflict & Restore Track
+                  </button>
+                  ${
+                    hasTrack
+                      ? `
+                    <button
+                      class="admin-small-btn view-conflict-graph-btn"
+                      data-from="${escapeHTML(c.from_station)}"
+                      data-to="${escapeHTML(c.to_station)}"
+                      style="font-size: 12px; padding: 0 12px; min-height: 42px; display: inline-flex; align-items: center; gap: 4px;"
+                    >
+                      Visualise in Graph ➔
+                    </button>
+                  `
+                      : ''
+                  }
+                </div>
+              </div>
+            </div>
+          `;
+          })
+          .join('')}
+      </div>
+    `;
+
+    document.getElementById('refresh-solve-conflicts')?.addEventListener('click', loadSolveConflict);
+
+    // Wire Graph buttons
+    panel.querySelectorAll('.view-conflict-graph-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const from = btn.getAttribute('data-from');
+        const to = btn.getAttribute('data-to');
+        adminState.returnView = 'solve';
+        adminState.viewingTrain = {
+          blockedFrom: from,
+          blockedTo: to,
+          allocatedRoute: [],
+          originalRoute: [],
+          bypassSegment: [],
+        };
+        activateAdminView('graph');
+        if (from && to) {
+          adminState.selectedSource = from;
+          adminState.selectedDestination = to;
+          loadAdminGraph().then(() => {
+            renderAdminGraphPanel();
+          });
+        }
+      });
+    });
+
+    // Wire Undo buttons
+    panel.querySelectorAll('.undo-conflict-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const conflictId = btn.getAttribute('data-id');
+        const noteInput = document.getElementById(`note-${conflictId}`);
+        const resolutionNote = (noteInput?.value || '').trim() || 'Track restored to normal operations.';
+
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳</span> Restoring...`;
+        btn.style.opacity = '0.7';
+
+        try {
+          const res = await adminFetch(`/api/admin/conflicts/${conflictId}/resolve`, {
+            method: 'POST',
+            body: JSON.stringify({
+              restoreStatus: 'ACTIVE',
+              resolutionNote: resolutionNote,
+            }),
+          });
+
+          const restoredCount = res.restoredTrainsCount || 0;
+          const restoredTrainsList = (res.restoredTrains || [])
+            .map((t) => `#${t.trainNumber} (${t.trainName})`)
+            .join(', ');
+
+          const alertContainer = document.getElementById('solve-alert-container');
+          if (alertContainer) {
+            alertContainer.innerHTML = `
+              <div style="background: #ecfdf5; border: 1.5px solid #10b981; border-radius: 12px; padding: 16px 20px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);">
+                <div style="display: flex; align-items: flex-start; justify-content: space-between;">
+                  <div>
+                    <div style="font-size: 15px; font-weight: 800; color: #065f46; display: flex; align-items: center; gap: 8px;">
+                      <span>✓</span> Track Conflict Successfully Undone & Resolved!
+                    </div>
+                    <div style="font-size: 13px; color: #047857; margin-top: 6px; line-height: 1.5;">
+                      Track segment has been altered back to <strong>ACTIVE</strong> status.<br/>
+                      <strong>${restoredCount} train(s)</strong> have been returned from their bypass detours back to their original scheduled routes:
+                      <div style="font-weight: 700; color: #065f46; margin-top: 4px;">${restoredTrainsList || 'None rerouted'}</div>
+                    </div>
+                  </div>
+                  <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 18px; cursor: pointer; color: #047857;">✕</button>
+                </div>
+              </div>
+            `;
+          }
+
+          setTimeout(() => {
+            loadSolveConflict();
+          }, 2000);
+        } catch (err) {
+          btn.disabled = false;
+          btn.innerHTML = `<span>🔧</span> Undo Conflict & Restore Track`;
+          btn.style.opacity = '1';
+          alert(`Failed to resolve conflict: ${err.message || 'Server error'}`);
+        }
+      });
+    });
+  } catch (error) {
+    panel.innerHTML = `
+      <div class="admin-panel-header">
+        <div>
+          <h3>Active Track Conflicts & Network Disruptions</h3>
+          <p>Review open conflicts, damaged tracks, and undo/restore them</p>
+        </div>
+      </div>
+      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px; margin-top: 16px;">
+        Failed to load active conflicts: ${escapeHTML(error.message || 'Server error')}
+      </div>
+    `;
+  }
 }
 
 function initMobileDrawer() {
