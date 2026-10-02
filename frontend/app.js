@@ -2542,7 +2542,7 @@ async function loadSolveConflict() {
           </button>
         </div>
 
-        <div style="background: #f0fdf4; border: 1.5px solid #86efac; border-radius: 14px; padding: 48px 24px; text-align: center; max-width: 640px; margin: 20px auto 0;">
+        <div style="background: #f0fdf4; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 48px 24px; text-align: center; max-width: 640px; margin: 20px auto 0;">
           <h4 style="margin: 0 0 10px; font-size: 19px; font-weight: 800; color: #166534;">All Railway Tracks Clear</h4>
           <p style="margin: 0 auto 20px; font-size: 13.5px; color: #15803d; line-height: 1.6;">
             There are currently no active conflicts or track damages. All train journeys are operating on their normal scheduled routes across all regional shards.
@@ -2567,7 +2567,7 @@ async function loadSolveConflict() {
         <div>
           <h3 style="font-size: 24px; font-weight: 800; color: #111111; margin: 0;">Active Track Conflicts</h3>
         </div>
-        <button class="admin-small-btn" id="refresh-solve-conflicts">
+        <button class="admin-small-btn" id="refresh-solve-conflicts" style="font-size: 12px; padding: 6px 16px; min-height: 34px; font-weight: 800; background: #ffd43b; color: #000000; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px; cursor: pointer;">
           Refresh
         </button>
       </div>
@@ -2575,21 +2575,21 @@ async function loadSolveConflict() {
       <div id="solve-alert-container" style="margin-bottom: 18px;"></div>
 
       <div style="display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 160px; background: #fff1f2; border: 1.5px solid #fecdd3; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #e11d48; text-transform: uppercase;">Open Conflicts</div>
-          <div style="font-size: 24px; font-weight: 800; color: #be123c; margin-top: 4px;">${conflicts.length} <span style="font-size: 13px; font-weight: 600;">Active</span></div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Open Conflicts</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${conflicts.length} <span style="font-size: 12px; font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 2px 8px; border-radius: 10px; border: 1.5px solid #000000;">Active</span></div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #fefce8; border: 1.5px solid #fef08a; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #ca8a04; text-transform: uppercase;">Rerouted Trains</div>
-          <div style="font-size: 24px; font-weight: 800; color: #a16207; margin-top: 4px;">${totalAffected}</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Rerouted Trains</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalAffected}</div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Network State</div>
-          <div style="font-size: 24px; font-weight: 800; color: #dc2626; margin-top: 4px;">DISRUPTED</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Network State</div>
+          <div style="font-size: 24px; font-weight: 800; color: #0284c7; margin-top: 4px;">DISRUPTED</div>
         </div>
       </div>
 
-      <div class="admin-conflict-list">
+      <div class="admin-conflict-list" style="display: grid; gap: 20px;">
         ${conflicts
           .map((c) => {
             const hasTrack = c.from_station && c.to_station;
@@ -2600,49 +2600,60 @@ async function loadSolveConflict() {
               : 'Network Target';
 
             return `
-            <div class="admin-conflict-card" id="conflict-card-${escapeHTML(c.id)}" style="box-shadow: 0 2px 10px rgba(0,0,0,0.03);">
-              <div class="admin-card-topline" style="margin-bottom: 12px;">
+            <div class="admin-conflict-card" id="conflict-card-${escapeHTML(c.id)}" style="background: #ffffff; border: 3px solid #000000; border-radius: 16px; padding: 20px; box-shadow: 0 4px 0 #000000;">
+              <div class="admin-card-topline" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; border-bottom: 2px solid #000000; padding-bottom: 12px;">
                 <div>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px;">
-                    <h4 style="margin: 0; font-size: 16px;">${escapeHTML(c.title || c.conflict_type || 'Track Disruption')}</h4>
-                    <span class="${adminSeverityBadge(c.severity)}" style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700;">
-                      ${escapeHTML(c.severity || 'HIGH')}
-                    </span>
-                    <span style="background: #fee2e2; color: #dc2626; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 12px; border: 1px solid #fca5a5;">
+                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                    <h4 style="margin: 0; font-size: 18px; font-weight: 800; color: #111111;">${escapeHTML(c.title || c.conflict_type || 'Track Disruption')}</h4>
+                    <span style="background: #e0f2fe; color: #0284c7; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 12px; border: 1.5px solid #000000;">
                       OPEN DISRUPTION
                     </span>
                   </div>
-                  <div style="font-size: 13px; font-weight: 700; color: #0284c7; margin-top: 4px;">
+                  <div style="font-size: 13px; font-weight: 800; color: #0284c7; margin-top: 4px;">
                     ${targetLabel}
                   </div>
                 </div>
-                <div style="text-align: right; font-size: 11px; color: #64748b; font-weight: 600;">
+                <div style="text-align: right; font-size: 11px; color: #64748b; font-weight: 700;">
                   Reported: ${new Date(c.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}, ${new Date(c.created_at).toLocaleDateString()}
                 </div>
               </div>
 
-              <div class="admin-conflict-meta" style="margin: 8px 0 12px; font-size: 12px;">
-                <span style="background: #f1f5f9; padding: 4px 10px; border-radius: 8px; font-weight: 600; color: #334155;">
-                  <strong>Type:</strong> ${escapeHTML(c.conflict_type)}
-                </span>
-                <span style="background: #fef3c7; color: #b45309; padding: 4px 10px; border-radius: 8px; font-weight: 700; border: 1px solid #fde68a;">
-                  ${c.affected_count || 0} Train(s) Rerouted
-                </span>
-                ${c.track_id ? `<span style="background: #f1f5f9; padding: 4px 10px; border-radius: 8px; font-weight: 600; color: #64748b;">Track ID: <code>${escapeHTML(c.track_id.substring(0, 8))}...</code></span>` : ''}
+              <!-- Ticket Card Graphic Layout matching View Trains -->
+              <div class="ticket-card" style="margin-bottom: 16px; cursor: default; background: #f8fafc; border: 2px solid #000000; box-shadow: none;">
+                <div class="card-col-left">
+                  <div class="train-name">${escapeHTML(c.from_station || 'Origin')} -&gt; ${escapeHTML(c.to_station || 'Destination')}</div>
+                  <div class="train-no">Disruption Type: ${escapeHTML(c.conflict_type || 'TRACK_FAILURE')}</div>
+                </div>
+                <div class="card-col-dept">
+                  <div class="time-text" style="font-size: 18px; color: #111111;">${escapeHTML(c.from_station || '-')}</div>
+                  <div class="station-subtext">${escapeHTML(c.from_station_name || 'From Station')}</div>
+                </div>
+                <div class="card-col-route">
+                  <div class="runs-text" style="color: #0284c7; font-weight: 800; font-size: 12px;">${c.affected_count || 0} Train(s) Rerouted</div>
+                  <div class="route-graphic">
+                    <span class="route-node route-node-yellow"></span>
+                    <span class="route-line"></span>
+                    <span class="route-node route-node-blue"></span>
+                  </div>
+                </div>
+                <div class="card-col-arr">
+                  <div class="time-text" style="font-size: 18px; color: #111111;">${escapeHTML(c.to_station || '-')}</div>
+                  <div class="station-subtext">${escapeHTML(c.to_station_name || 'To Station')}</div>
+                </div>
               </div>
 
               ${
                 c.description
-                  ? `<div class="admin-conflict-description" style="margin-bottom: 16px; padding: 10px 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 12.5px; color: #475569; line-height: 1.5;">
+                  ? `<div style="margin-bottom: 16px; padding: 12px 14px; background: #ffffff; border-radius: 12px; border: 2px solid #000000; font-size: 12.5px; color: #111111; line-height: 1.5; font-weight: 600;">
                       ${escapeHTML(c.description)}
                     </div>`
                   : ''
               }
 
-              <!-- Resolution / Undo Action Box -->
-              <div style="background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 10px; padding: 14px; margin-top: 10px;">
-                <div style="font-size: 12px; font-weight: 700; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">
-                  Undo Conflict & Track Restoration Action:
+              <!-- Undo Resolution Box -->
+              <div style="background: #f0fdf4; border: 2px solid #000000; border-radius: 14px; padding: 16px;">
+                <div style="font-size: 12px; font-weight: 800; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">
+                  Undo Conflict &amp; Track Restoration Action:
                 </div>
                 <div class="admin-resolve-row" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                   <input
@@ -2651,14 +2662,14 @@ async function loadSolveConflict() {
                     class="admin-input admin-resolution-note"
                     placeholder="Resolution note (e.g. Track welded and inspected)..."
                     value="Track repaired and safety inspected. Resuming normal operations."
-                    style="flex: 1; min-width: 240px; font-size: 12px;"
+                    style="flex: 1; min-width: 240px; font-size: 12px; border: 2px solid #000000; border-radius: 10px; padding: 10px 14px; font-weight: 600; background: #ffffff;"
                   />
                   <button
                     class="admin-action-btn undo-conflict-btn"
                     data-id="${escapeHTML(c.id)}"
-                    style="background: #10b981; color: #ffffff; border: 1.5px solid #000000; box-shadow: 0 2.5px 0 #000000; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 0 16px;"
+                    style="background: #10b981; color: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 10px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 10px 20px; font-size: 13px;"
                   >
-                    Undo Conflict & Restore Track
+                    Undo Conflict &amp; Restore Track
                   </button>
                 </div>
               </div>
@@ -2699,19 +2710,19 @@ async function loadSolveConflict() {
           const alertContainer = document.getElementById('solve-alert-container');
           if (alertContainer) {
             alertContainer.innerHTML = `
-              <div style="background: #ecfdf5; border: 1.5px solid #10b981; border-radius: 12px; padding: 16px 20px; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.15);">
+              <div style="background: #f0fdf4; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 14px; padding: 16px 20px;">
                 <div style="display: flex; align-items: flex-start; justify-content: space-between;">
                   <div>
-                    <div style="font-size: 15px; font-weight: 800; color: #065f46; display: flex; align-items: center; gap: 8px;">
-                      Track Conflict Successfully Undone & Resolved!
+                    <div style="font-size: 15px; font-weight: 800; color: #15803d;">
+                      Track Conflict Successfully Undone &amp; Resolved!
                     </div>
-                    <div style="font-size: 13px; color: #047857; margin-top: 6px; line-height: 1.5;">
+                    <div style="font-size: 13px; color: #166534; margin-top: 6px; line-height: 1.5; font-weight: 600;">
                       Track segment has been altered back to <strong>ACTIVE</strong> status.<br/>
                       <strong>${restoredCount} train(s)</strong> have been returned from their bypass detours back to their original scheduled routes:
-                      <div style="font-weight: 700; color: #065f46; margin-top: 4px;">${restoredTrainsList || 'None rerouted'}</div>
+                      <div style="font-weight: 800; color: #15803d; margin-top: 4px;">${restoredTrainsList || 'None rerouted'}</div>
                     </div>
                   </div>
-                  <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 16px; font-weight: bold; cursor: pointer; color: #047857;">X</button>
+                  <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 16px; font-weight: bold; cursor: pointer; color: #15803d;">X</button>
                 </div>
               </div>
             `;
@@ -2722,7 +2733,7 @@ async function loadSolveConflict() {
           }, 2000);
         } catch (err) {
           btn.disabled = false;
-          btn.innerHTML = `Undo Conflict & Restore Track`;
+          btn.innerHTML = `Undo Conflict &amp; Restore Track`;
           btn.style.opacity = '1';
           alert(`Failed to resolve conflict: ${err.message || 'Server error'}`);
         }
@@ -2735,7 +2746,7 @@ async function loadSolveConflict() {
           <h3 style="font-size: 24px; font-weight: 800; color: #111111; margin: 0;">Active Track Conflicts</h3>
         </div>
       </div>
-      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px; margin-top: 16px;">
+      <div class="error-state" style="padding: 24px; color: #000000; background: #ffffff; border: 2px solid #000000; border-radius: 14px; margin-top: 16px; font-weight: 800;">
         Failed to load active conflicts: ${escapeHTML(error.message || 'Server error')}
       </div>
     `;
