@@ -1541,14 +1541,6 @@ function renderAdminGraphPanel() {
               : ''
           }
         </div>
-        <div style="display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 700; flex-wrap: wrap;">
-          <span style="background: #fee2e2; color: #dc2626; padding: 4px 10px; border-radius: 8px; border: 1px solid #fca5a5; display: inline-flex; align-items: center; gap: 4px;">
-            <span style="font-size: 14px;">⛔</span> Red Dotted = Damaged Track ${adminState.viewingTrain?.blockedFrom ? `(${escapeHTML(adminState.viewingTrain.blockedFrom)} ↔ ${escapeHTML(adminState.viewingTrain.blockedTo)})` : ''}
-          </span>
-          <span style="background: #eff6ff; color: #1d4ed8; padding: 4px 10px; border-radius: 8px; border: 1px solid #bfdbfe; display: inline-flex; align-items: center; gap: 4px;">
-            <span style="font-size: 14px;">➔</span> Blue Arrows = Alternate Connection (Detour)
-          </span>
-        </div>
       </div>
     `
     : '';
@@ -1651,7 +1643,6 @@ function adminGraphSvg() {
     damagedPairs.add(`${blockedTo}-${blockedFrom}`);
   }
 
-  const damagedBadges = [];
   const renderedDamagedKeys = new Set();
 
   const edgeLines = graph.edges
@@ -1668,18 +1659,8 @@ function adminGraphSvg() {
 
       if (isBlocked) {
         const pairKey = [edge.sourceCode, edge.targetCode].sort().join('-');
-        if (!renderedDamagedKeys.has(pairKey)) {
-          renderedDamagedKeys.add(pairKey);
-          const mx = (a.x + b.x) / 2;
-          const my = (a.y + b.y) / 2;
-          damagedBadges.push(`
-            <g class="admin-damaged-badge" transform="translate(${mx}, ${my})">
-              <rect x="-60" y="-13" width="120" height="26" rx="13" fill="#ef4444" stroke="#ffffff" stroke-width="2.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.25))"></rect>
-              <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff" font-family="sans-serif">⛔ DAMAGED</text>
-            </g>
-          `);
-        }
-        return `<line class="admin-blocked-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" style="stroke: #ef4444; stroke-width: 6; stroke-dasharray: 8 6; opacity: 1;"></line>`;
+        renderedDamagedKeys.add(pairKey);
+        return `<line class="admin-blocked-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" style="stroke: #ef4444; stroke-width: 5; stroke-dasharray: 6 4; opacity: 1;"></line>`;
       }
       return `<line class="admin-track-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line>`;
     })
@@ -1694,16 +1675,8 @@ function adminGraphSvg() {
       if (sNode && tNode) {
         const a = nodePosition(sNode);
         const b = nodePosition(tNode);
-        const mx = (a.x + b.x) / 2;
-        const my = (a.y + b.y) / 2;
         renderedDamagedKeys.add(pairKey);
-        fallbackDamagedEdge = `<line class="admin-blocked-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" style="stroke: #ef4444; stroke-width: 6; stroke-dasharray: 8 6; opacity: 1;"></line>`;
-        damagedBadges.push(`
-          <g class="admin-damaged-badge" transform="translate(${mx}, ${my})">
-            <rect x="-60" y="-13" width="120" height="26" rx="13" fill="#ef4444" stroke="#ffffff" stroke-width="2.5" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.25))"></rect>
-            <text x="0" y="4" text-anchor="middle" font-size="11" font-weight="800" fill="#ffffff" font-family="sans-serif">⛔ DAMAGED</text>
-          </g>
-        `);
+        fallbackDamagedEdge = `<line class="admin-blocked-edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" style="stroke: #ef4444; stroke-width: 5; stroke-dasharray: 6 4; opacity: 1;"></line>`;
       }
     }
   }
@@ -1711,8 +1684,8 @@ function adminGraphSvg() {
   return `
     <svg id="admin-network-svg" style="height:${renderedHeight}px" viewBox="${adminState.viewBox.x} ${adminState.viewBox.y} ${adminState.viewBox.w} ${adminState.viewBox.h}" role="img" aria-label="Railway graph visualisation">
       <defs>
-        <marker id="route-arrow" markerWidth="3.5" markerHeight="3.5" refX="3.2" refY="1.75" orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0 L3.5,1.75 L0,3.5 Z" fill="#1173f4"></path>
+        <marker id="route-arrow" markerWidth="2.5" markerHeight="2.5" refX="2.2" refY="1.25" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L2.5,1.25 L0,2.5 Z" fill="#1173f4"></path>
         </marker>
       </defs>
       <g class="admin-region-label-layer">
@@ -2021,21 +1994,21 @@ function adminConflictTarget(conflict) {
 async function loadAdminRegions() {
   const panel = document.getElementById('admin-view-regions');
   if (!panel) return;
-  panel.innerHTML = `<div class="loading-state" style="padding: 24px; color: #64748b; font-weight: 500;">Loading regional database shards...</div>`;
+  panel.innerHTML = `<div class="loading-state" style="padding: 24px; color: #64748b; font-weight: 500;">Loading regional railway divisions...</div>`;
   try {
     const json = await adminFetch('/api/admin/regions');
     const regions = json.data || [];
 
-    const schemaMap = {
-      SR: 'railway_south',
-      CR: 'railway_central',
-      NR: 'railway_north',
+    const hubsListMap = {
+      SR: ['MAS (Chennai Central)', 'SBC (Bengaluru)', 'KPD (Katpadi)', 'JTJ (Jolarpettai)', 'TPJ (Tiruchchirappalli)', 'SA (Salem)'],
+      CR: ['CSMT (Mumbai)', 'BPL (Bhopal)', 'NGP (Nagpur)', 'ET (Itarsi)', 'BINA (Bina Junction)'],
+      NR: ['NDLS (New Delhi)', 'NZM (Hazrat Nizamuddin)', 'AGC (Agra Cantt)', 'MTJ (Mathura)', 'GWL (Gwalior)'],
     };
 
-    const hubsMap = {
-      SR: 'MAS (Chennai), SBC (Bengaluru), KPD, JTJ, TPJ, SA, MDU',
-      CR: 'BPL (Bhopal), CSMT (Mumbai), NGP (Nagpur), ET (Itarsi), BINA',
-      NR: 'NDLS (New Delhi), NZM (Hazrat Nizamuddin), AGC, MTJ, GWL, VGLJ',
+    const regionalInfoMap = {
+      SR: { hq: 'Chennai Central', routeKm: '5,084 km', traffic: '420+ Express Trains & ~2.1M Passengers Daily', electrification: '98.4% Electrified • Automatic Double Block' },
+      CR: { hq: 'Mumbai CSMT', routeKm: '4,151 km', traffic: '380+ Express Trains & ~1.8M Passengers Daily', electrification: '100% Electrified • High-Density Trunk Line' },
+      NR: { hq: 'New Delhi', routeKm: '6,968 km', traffic: '510+ Express Trains & ~2.8M Passengers Daily', electrification: '99.1% Electrified • High-Speed Corridor' },
     };
 
     const totalStations = regions.reduce((sum, r) => sum + (r.stations || 0), 0);
@@ -2044,81 +2017,91 @@ async function loadAdminRegions() {
     const totalOpenConflicts = regions.reduce((sum, r) => sum + (r.openConflicts || 0), 0);
 
     panel.innerHTML = `
-      <div class="admin-panel-header" style="margin-bottom: 20px;">
-        <div>
-          <h3 style="font-size: 22px; font-weight: 800; color: #111111; margin: 0;">Regional Networks & Database Shards</h3>
-          <p style="font-size: 13px; color: #64748b; font-weight: 500; margin-top: 4px;">Live status, metric aggregations, and regional node connectivity across railway zones.</p>
-        </div>
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 24px; font-weight: 800; color: #111111; margin: 0;">Regional Railway Divisions</h3>
       </div>
 
       <div style="display: flex; gap: 14px; margin-bottom: 24px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Active Nodes</div>
-          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${regions.length} <span style="font-size: 12px; font-weight: 700; color: #10a52a; background: #e8f9ee; padding: 2px 8px; border-radius: 10px; border: 1px solid #c2f0cc;">Online</span></div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Active Divisions</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${regions.length} <span style="font-size: 12px; font-weight: 800; color: #10a52a; background: #e8f9ee; padding: 2px 8px; border-radius: 10px; border: 1.5px solid #c2f0cc;">Online</span></div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Total Stations</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Total Stations</div>
           <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalStations}</div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Track Segments</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Track Segments</div>
           <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalTracks}</div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Active Trains</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Active Trains</div>
           <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalActiveTrains}</div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Open Conflicts</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Open Conflicts</div>
           <div style="font-size: 24px; font-weight: 800; color: ${totalOpenConflicts > 0 ? '#ef4444' : '#10a52a'}; margin-top: 4px;">${totalOpenConflicts}</div>
         </div>
       </div>
 
-      <div class="admin-region-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+      <div class="admin-region-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px;">
         ${regions
           .map((r) => {
-            const schema = schemaMap[r.code] || `railway_${r.code.toLowerCase()}`;
-            const hubs = hubsMap[r.code] || 'Regional Network Hubs';
+            const hubsList = hubsListMap[r.code] || [];
+            const info = regionalInfoMap[r.code] || { hq: 'Regional HQ', routeKm: '4,000+ km', traffic: 'Suburban & Express Lines', electrification: 'Electrified Double Track' };
             return `
             <div class="admin-region-card" style="background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
               <div>
-                <div class="admin-card-topline" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 12px;">
+                <div class="admin-card-topline" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 2px solid #000000; padding-bottom: 12px;">
                   <div>
-                    <h4 style="margin: 0; font-size: 18px; font-weight: 800; color: #111111;">${escapeHTML(r.name)} Division (${escapeHTML(r.code)})</h4>
-                    <p style="margin: 4px 0 0; font-size: 12px; color: #64748b; font-weight: 600;">Database Schema: <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 6px; color: #0284c7; font-weight: 700;">${escapeHTML(schema)}</code></p>
+                    <h4 style="margin: 0; font-size: 20px; font-weight: 800; color: #111111;">${escapeHTML(r.name)} Zone (${escapeHTML(r.code)})</h4>
+                    <div style="font-size: 12px; font-weight: 700; color: #64748b; margin-top: 2px;">Zone HQ: ${escapeHTML(info.hq)}</div>
                   </div>
                   <span class="badge-green" style="background: #e8f9ee; color: #10a52a; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 800; border: 1.5px solid #c2f0cc;">${escapeHTML(r.status)}</span>
                 </div>
 
                 <div class="stats-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
-                  <div class="stat-box" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center;">
-                    <h5 style="margin: 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Stations</h5>
-                    <p style="margin: 4px 0 0; font-size: 20px; font-weight: 800; color: #111111;">${r.stations}</p>
+                  <div class="stat-box" style="background: #f8fafc; border: 2px solid #000000; border-radius: 12px; padding: 10px; text-align: center;">
+                    <h5 style="margin: 0; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">Stations</h5>
+                    <p style="margin: 4px 0 0; font-size: 22px; font-weight: 800; color: #111111;">${r.stations}</p>
                   </div>
-                  <div class="stat-box" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center;">
-                    <h5 style="margin: 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Tracks</h5>
-                    <p style="margin: 4px 0 0; font-size: 20px; font-weight: 800; color: #111111;">${r.tracks}</p>
+                  <div class="stat-box" style="background: #f8fafc; border: 2px solid #000000; border-radius: 12px; padding: 10px; text-align: center;">
+                    <h5 style="margin: 0; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">Tracks</h5>
+                    <p style="margin: 4px 0 0; font-size: 22px; font-weight: 800; color: #111111;">${r.tracks}</p>
                   </div>
-                  <div class="stat-box" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center;">
-                    <h5 style="margin: 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Running</h5>
-                    <p style="margin: 4px 0 0; font-size: 20px; font-weight: 800; color: #111111;">${r.activeTrains}</p>
+                  <div class="stat-box" style="background: #f8fafc; border: 2px solid #000000; border-radius: 12px; padding: 10px; text-align: center;">
+                    <h5 style="margin: 0; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">Active Trains</h5>
+                    <p style="margin: 4px 0 0; font-size: 22px; font-weight: 800; color: #111111;">${r.activeTrains}</p>
                   </div>
                 </div>
 
-                <div style="margin-bottom: 14px; font-size: 12px; color: #475569;">
-                  <span style="font-weight: 800; color: #0f172a;">Primary Junctions & Hubs:</span>
-                  <div style="margin-top: 4px; font-weight: 600; color: #334155; line-height: 1.4;">${escapeHTML(hubs)}</div>
+                <div style="margin-bottom: 14px;">
+                  <div style="font-weight: 800; font-size: 12px; color: #000000; margin-bottom: 6px;">Primary Junctions & Hubs:</div>
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                    ${hubsList
+                      .map(
+                        (hub) =>
+                          `<span style="background: #fff3bf; color: #000000; padding: 4px 10px; border-radius: 12px; border: 1.5px solid #000000; font-size: 11px; font-weight: 800;">${escapeHTML(hub)}</span>`,
+                      )
+                      .join('')}
+                  </div>
+                </div>
+
+                <div style="margin-bottom: 14px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 12px; font-size: 12px;">
+                  <div style="margin-bottom: 4px; font-weight: 700; color: #334155;"><strong>Coverage:</strong> ${escapeHTML(info.routeKm)} Network</div>
+                  <div style="margin-bottom: 4px; font-weight: 700; color: #334155;"><strong>Traffic Density:</strong> ${escapeHTML(info.traffic)}</div>
+                  <div style="font-weight: 700; color: #0284c7;">⚡ ${escapeHTML(info.electrification)}</div>
                 </div>
 
                 <div style="margin-bottom: 14px; font-size: 12px;">
-                  <span style="font-weight: 800; color: #0f172a;">Connected Regional Nodes:</span>
+                  <span style="font-weight: 800; color: #000000;">Connected Regional Zones:</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
                     ${
                       r.connectedRegions?.length
                         ? r.connectedRegions
                             .map(
                               (cr) =>
-                                `<span style="background: #e0f2fe; color: #0284c7; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1px solid #bae6fd;">${escapeHTML(cr)}</span>`,
+                                `<span style="background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1.5px solid #000000;">${escapeHTML(cr)}</span>`,
                             )
                             .join('')
                         : '<span style="color: #94a3b8; font-size: 12px;">None (isolated)</span>'
@@ -2127,11 +2110,11 @@ async function loadAdminRegions() {
                 </div>
               </div>
 
-              <div style="margin-top: 14px; padding-top: 14px; border-top: 1.5px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 12px; font-weight: 700; color: ${r.openConflicts > 0 ? '#ef4444' : '#10a52a'}; display: flex; align-items: center; gap: 4px;">
+              <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #000000; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12px; font-weight: 800; color: ${r.openConflicts > 0 ? '#ef4444' : '#10a52a'}; display: flex; align-items: center; gap: 4px;">
                   ${r.openConflicts > 0 ? `⚠️ ${r.openConflicts} conflict active` : '✓ All lines operational'}
                 </span>
-                <button class="admin-small-btn view-region-graph-btn" data-region-code="${escapeHTML(r.code)}" style="font-size: 12px; padding: 6px 14px; min-height: 32px; font-weight: 800; background: #ffd43b; color: #000000; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px; cursor: pointer;">
+                <button class="admin-small-btn view-region-graph-btn" data-region-code="${escapeHTML(r.code)}" style="font-size: 12px; padding: 6px 16px; min-height: 34px; font-weight: 800; background: #ffd43b; color: #000000; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px; cursor: pointer;">
                   Filter Graph ➔
                 </button>
               </div>
@@ -2151,14 +2134,11 @@ async function loadAdminRegions() {
     });
   } catch (error) {
     panel.innerHTML = `
-      <div class="admin-panel-header">
-        <div>
-          <h3 style="font-size: 22px; font-weight: 800; color: #111111; margin: 0;">Regional Networks & Database Shards</h3>
-          <p style="font-size: 13px; color: #64748b; font-weight: 500; margin-top: 4px;">Live status, metric aggregations, and regional node connectivity across railway zones.</p>
-        </div>
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 24px; font-weight: 800; color: #111111; margin: 0;">Regional Railway Divisions</h3>
       </div>
-      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1.5px solid #fee2e2; border-radius: 12px; margin-top: 16px; font-weight: 700;">
-        Failed to load regional database statistics: ${escapeHTML(error.message || 'Server error')}
+      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 2px solid #000000; border-radius: 16px; margin-top: 16px; font-weight: 800;">
+        Failed to load regional statistics: ${escapeHTML(error.message || 'Server error')}
       </div>
     `;
   }
@@ -2175,23 +2155,20 @@ async function loadRaiseConflict() {
     const tracks = (json.data || []).filter((t) => t.status === 'ACTIVE');
 
     panel.innerHTML = `
-      <div class="admin-panel-header" style="margin-bottom: 20px;">
-        <div>
-          <h3>Raise Track Conflict & Auto-Allocate Route</h3>
-          <p>Simulate damaged track and automatically allocate trains to the nearest alternate track using Dijkstra's algorithm</p>
-        </div>
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 24px; font-weight: 800; color: #111111; margin: 0;">Raise Track Disruption</h3>
       </div>
 
-      <div style="display: grid; grid-template-columns: minmax(320px, 370px) minmax(0, 1fr); gap: 20px; align-items: start;">
+      <div style="display: grid; grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); gap: 20px; align-items: start;">
         <!-- Left: Conflict Form -->
-        <div class="admin-region-card" style="padding: 18px; position: sticky; top: 0;">
-          <h4 style="margin: 0 0 16px; font-size: 16px; font-weight: 800; color: #111111;">1. Select Damaged Track</h4>
+        <div style="background: #ffffff; border: 3px solid #000000; box-shadow: 0 5px 0 #000000; border-radius: 16px; padding: 22px; position: sticky; top: 0;">
+          <h4 style="margin: 0 0 18px; font-size: 18px; font-weight: 800; color: #111111;">1. Select Damaged Track</h4>
           <form id="raise-conflict-form" autocomplete="off">
-            <div style="margin-bottom: 14px;">
-              <label for="raise-track-id" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+            <div style="margin-bottom: 16px;">
+              <label for="raise-track-id" style="display: block; font-size: 13px; font-weight: 800; color: #111111; margin-bottom: 6px;">
                 Track Segment to Damage:
               </label>
-              <select id="raise-track-id" class="admin-input" style="width: 100%;" required>
+              <select id="raise-track-id" class="admin-input" style="width: 100%; border: 2.5px solid #000000; border-radius: 12px; padding: 10px 14px; font-family: 'Poppins', sans-serif; font-size: 14px; font-weight: 700; background: #ffffff;" required>
                 <option value="">-- Choose Track Segment --</option>
                 ${tracks
                   .map(
@@ -2205,12 +2182,12 @@ async function loadRaiseConflict() {
               </select>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
               <div>
-                <label for="raise-conflict-type" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                <label for="raise-conflict-type" style="display: block; font-size: 13px; font-weight: 800; color: #111111; margin-bottom: 6px;">
                   Conflict Type:
                 </label>
-                <select id="raise-conflict-type" class="admin-input" style="width: 100%;">
+                <select id="raise-conflict-type" class="admin-input" style="width: 100%; border: 2.5px solid #000000; border-radius: 12px; padding: 10px; font-family: 'Poppins', sans-serif; font-size: 13px; font-weight: 700; background: #ffffff;">
                   <option value="TRACK_FAILURE" selected>Track Damage / Fracture</option>
                   <option value="ROUTE_BLOCKAGE">Route Blockage</option>
                   <option value="ACCIDENT">Accident / Derailment</option>
@@ -2219,10 +2196,10 @@ async function loadRaiseConflict() {
               </div>
 
               <div>
-                <label for="raise-conflict-severity" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+                <label for="raise-conflict-severity" style="display: block; font-size: 13px; font-weight: 800; color: #111111; margin-bottom: 6px;">
                   Severity:
                 </label>
-                <select id="raise-conflict-severity" class="admin-input" style="width: 100%;">
+                <select id="raise-conflict-severity" class="admin-input" style="width: 100%; border: 2.5px solid #000000; border-radius: 12px; padding: 10px; font-family: 'Poppins', sans-serif; font-size: 13px; font-weight: 700; background: #ffffff;">
                   <option value="CRITICAL">CRITICAL</option>
                   <option value="HIGH" selected>HIGH</option>
                   <option value="MEDIUM">MEDIUM</option>
@@ -2231,48 +2208,42 @@ async function loadRaiseConflict() {
               </div>
             </div>
 
-            <div style="margin-bottom: 14px;">
-              <label for="raise-conflict-title" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
+            <div style="margin-bottom: 16px;">
+              <label for="raise-conflict-title" style="display: block; font-size: 13px; font-weight: 800; color: #111111; margin-bottom: 6px;">
                 Incident Title:
               </label>
-              <input type="text" id="raise-conflict-title" class="admin-input" style="width: 100%;" value="Track Fracture & Physical Rail Damage" required />
+              <input type="text" id="raise-conflict-title" class="admin-input" style="width: 100%; border: 2.5px solid #000000; border-radius: 12px; padding: 10px 14px; font-family: 'Poppins', sans-serif; font-size: 14px; font-weight: 700; background: #ffffff;" value="Track Fracture & Rail Damage" required />
             </div>
 
-            <div style="margin-bottom: 16px;">
-              <label for="raise-conflict-desc" style="display: block; font-size: 13px; font-weight: 700; color: #334155; margin-bottom: 6px;">
-                Description / Sensor Log:
+            <div style="margin-bottom: 18px;">
+              <label for="raise-conflict-desc" style="display: block; font-size: 13px; font-weight: 800; color: #111111; margin-bottom: 6px;">
+                Description:
               </label>
-              <textarea id="raise-conflict-desc" class="admin-input" rows="3" style="width: 100%; height: auto; padding: 10px 14px; font-family: inherit;">Track sensor detected rail distortion. Track segment rendered impassable. Immediate bypass reallocation needed.</textarea>
+              <textarea id="raise-conflict-desc" class="admin-input" rows="3" style="width: 100%; height: auto; border: 2.5px solid #000000; border-radius: 12px; padding: 10px 14px; font-family: 'Poppins', sans-serif; font-size: 13px; font-weight: 600; background: #ffffff;">Track sensor detected rail distortion. Track segment rendered impassable.</textarea>
             </div>
 
-            <div style="margin-bottom: 20px; background: #f0fdf4; border: 1.5px solid #bbf7d0; border-radius: 12px; padding: 12px 14px;">
-              <label style="display: flex; align-items: flex-start; gap: 10px; cursor: pointer;">
-                <input type="checkbox" id="raise-auto-allocate" checked style="margin-top: 3px; accent-color: #10a52a; transform: scale(1.15);" />
-                <div>
-                  <div style="font-size: 13px; font-weight: 700; color: #166534;">Auto-Allocate Nearest Track (Dijkstra)</div>
-                  <div style="font-size: 12px; color: #4b7c59; margin-top: 2px;">
-                    Automatically recalculates shortest bypass route and updates train journeys in database.
-                  </div>
-                </div>
+            <div style="margin-bottom: 22px; background: #f8fafc; border: 2px solid #000000; border-radius: 12px; padding: 14px;">
+              <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                <input type="checkbox" id="raise-auto-allocate" checked style="accent-color: #000000; width: 18px; height: 18px; cursor: pointer;" />
+                <span style="font-size: 13px; font-weight: 800; color: #111111;">Auto-allocate alternate bypass route for affected trains</span>
               </label>
             </div>
 
-            <div id="raise-conflict-error" class="hidden" style="margin-bottom: 14px; padding: 10px 14px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 10px; color: #ef4444; font-size: 13px;"></div>
+            <div id="raise-conflict-error" class="hidden" style="margin-bottom: 14px; padding: 10px 14px; background: #fef2f2; border: 2px solid #ef4444; border-radius: 12px; color: #ef4444; font-size: 13px; font-weight: 700;"></div>
 
-            <button type="submit" id="btn-submit-raise-conflict" class="admin-action-btn" style="width: 100%; background: #ef4444; color: #ffffff; border-color: #b91c1c; box-shadow: 0 3px 0 #991b1b; font-size: 15px; padding: 12px;">
+            <button type="submit" id="btn-submit-raise-conflict" style="width: 100%; background: #ffd43b; color: #000000; border: 3px solid #000000; box-shadow: 0 4px 0 #000000; font-family: 'Poppins', sans-serif; font-size: 16px; font-weight: 800; border-radius: 14px; cursor: pointer; padding: 12px; transition: transform 0.12s ease;">
               🚨 Raise Conflict & Auto-Allocate
             </button>
           </form>
         </div>
 
-        <!-- Right: Results & Re-allocation Visualizer -->
+        <!-- Right: Results Container -->
         <div id="raise-conflict-results-container">
-          <div class="admin-region-card" style="padding: 24px; text-align: center; border-style: dashed;">
-            <div style="font-size: 40px; margin-bottom: 12px;">🛤️</div>
-            <h4 style="margin: 0 0 8px; font-size: 17px; font-weight: 700; color: #111111;">Automated Rerouting Ready</h4>
-            <p style="margin: 0; font-size: 13px; color: #64748b; max-width: 440px; margin: 0 auto; line-height: 1.5;">
-              Select a damaged track on the left and click <strong>Raise Conflict & Auto-Allocate</strong>.
-              The system will block the track in the database, detect any affected trains, and apply Dijkstra's algorithm to allocate the nearest alternate bypass track automatically.
+          <div style="background: #ffffff; border: 3px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 28px; text-align: center;">
+            <div style="font-size: 44px; margin-bottom: 12px;">🛤️</div>
+            <h4 style="margin: 0 0 8px; font-size: 18px; font-weight: 800; color: #111111;">Automated Disruption Rerouting</h4>
+            <p style="margin: 0; font-size: 13px; color: #64748b; font-weight: 600; max-width: 440px; margin: 0 auto; line-height: 1.5;">
+              Select a damaged track segment on the left and click <strong>Raise Conflict & Auto-Allocate</strong> to block the line and automatically calculate alternate routes for affected trains.
             </p>
           </div>
         </div>
@@ -2301,7 +2272,7 @@ async function loadRaiseConflict() {
 
       const submitBtn = document.getElementById('btn-submit-raise-conflict');
       submitBtn.disabled = true;
-      submitBtn.textContent = 'Calculating Dijkstra Bypass...';
+      submitBtn.textContent = 'Calculating Bypass Route...';
 
       try {
         const response = await adminFetch('/api/admin/conflicts', {
@@ -2330,13 +2301,10 @@ async function loadRaiseConflict() {
     });
   } catch (error) {
     panel.innerHTML = `
-      <div class="admin-panel-header" style="margin-bottom: 20px;">
-        <div>
-          <h3>Raise Track Conflict & Auto-Allocate Route</h3>
-          <p>Simulate damaged track and automatically allocate trains to the nearest alternate track using Dijkstra's algorithm</p>
-        </div>
+      <div style="margin-bottom: 20px;">
+        <h3 style="font-size: 24px; font-weight: 800; color: #111111; margin: 0;">Raise Track Disruption</h3>
       </div>
-      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px;">
+      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 3px solid #000000; border-radius: 16px; font-weight: 800;">
         Failed to load tracks: ${escapeHTML(error.message || 'Server error')}
       </div>
     `;
@@ -2348,104 +2316,69 @@ function renderRaiseConflictResults(result, container) {
 
   const track = result.damagedTrack || {};
   const rerouted = result.reroutedJourneys || [];
-  const conflict = result.data || {};
 
   container.innerHTML = `
-    <div class="admin-region-card" style="padding: 24px; border: 2px solid #ef4444; margin-bottom: 16px;">
-      <div class="admin-card-topline" style="margin-bottom: 16px;">
+    <div style="background: #ffffff; border: 3px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 22px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 2px solid #000000; padding-bottom: 12px;">
         <div>
-          <span style="background: #fee2e2; color: #dc2626; padding: 4px 12px; border-radius: 14px; font-size: 12px; font-weight: 800; border: 1px solid #fca5a5;">
+          <span style="background: #fee2e2; color: #dc2626; padding: 4px 12px; border-radius: 14px; font-size: 12px; font-weight: 800; border: 1.5px solid #fca5a5;">
             ⚠️ CONFLICT LOGGED & TRACK BLOCKED
           </span>
           <h4 style="margin: 8px 0 2px; font-size: 18px; font-weight: 800; color: #111111;">
-            ${escapeHTML(track.from_code || '')} ➔ ${escapeHTML(track.to_code || '')} Disabled
+            ${escapeHTML(track.from_code || '')} ↔ ${escapeHTML(track.to_code || '')} Disabled
           </h4>
-          <p style="margin: 0; font-size: 12px; color: #64748b;">
-            Physical status set to <strong>BLOCKED</strong> in regional database shard.
-          </p>
         </div>
-        <div style="text-align: right;">
-          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Disruption ID</div>
-          <code style="font-size: 12px; color: #111;">${escapeHTML(String(conflict.id || '').slice(0, 8))}...</code>
-        </div>
-      </div>
-
-      <div style="background: #f8fafc; border-radius: 12px; padding: 14px; margin-bottom: 18px; border: 1px solid #e2e8f0;">
-        <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-          <div>
-            <span style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Affected Trains</span>
-            <div style="font-size: 20px; font-weight: 800; color: ${rerouted.length > 0 ? '#dc2626' : '#10a52a'};">
-              ${rerouted.length} ${rerouted.length === 1 ? 'Train' : 'Trains'}
-            </div>
-          </div>
-          <div style="border-left: 1px solid #cbd5e1; padding-left: 16px;">
-            <span style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Rerouting Algorithm</span>
-            <div style="font-size: 15px; font-weight: 700; color: #0284c7;">
-              ⚡ Dijkstra Shortest Path
-            </div>
-          </div>
-          <div style="border-left: 1px solid #cbd5e1; padding-left: 16px;">
-            <span style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">Database Action</span>
-            <div style="font-size: 15px; font-weight: 700; color: #10a52a;">
-              ✓ Auto-Allocated & Saved
-            </div>
-          </div>
+        <div style="font-size: 14px; font-weight: 800; color: ${rerouted.length > 0 ? '#ef4444' : '#10a52a'};">
+          ${rerouted.length} ${rerouted.length === 1 ? 'Train Affected' : 'Trains Affected'}
         </div>
       </div>
 
       ${
         rerouted.length > 0
           ? `
-        <h4 style="margin: 0 0 12px; font-size: 15px; font-weight: 800; color: #111111;">
-          Rerouted Train Schedules (Database Updated)
+        <h4 style="margin: 0 0 14px; font-size: 16px; font-weight: 800; color: #111111;">
+          Affected Trains & Rerouted Schedules
         </h4>
-        <div style="display: grid; gap: 14px;">
+        <div style="display: grid; gap: 16px;">
           ${rerouted
             .map(
               (r) => `
-            <div style="background: #ffffff; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <div>
-                  <span style="font-size: 15px; font-weight: 800; color: #0f172a;">Train #${escapeHTML(r.trainNumber)}</span>
-                  <span style="font-size: 13px; font-weight: 600; color: #475569; margin-left: 8px;">${escapeHTML(r.trainName)}</span>
+            <div style="background: #ffffff; border: 2px solid #000000; border-radius: 16px; padding: 18px; box-shadow: 0 3px 0 #000000;">
+              <!-- User View Trains Ticket Card Layout -->
+              <div class="ticket-card" style="margin-bottom: 14px; cursor: default; background: #f8fafc; border: 2px solid #000000; box-shadow: none;">
+                <div class="card-col-left">
+                  <div class="train-name">${escapeHTML(r.trainName)}</div>
+                  <div class="train-no">Train No. - ${escapeHTML(r.trainNumber)}</div>
                 </div>
-                <span style="background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 12px; border: 1px solid #bbf7d0;">
-                  ✓ REROUTED
-                </span>
-              </div>
-
-              <!-- Route Comparison -->
-              <div style="margin-bottom: 12px;">
-                <div style="font-size: 11px; font-weight: 700; color: #ef4444; text-transform: uppercase; margin-bottom: 4px;">
-                  Original Route (Track Blocked):
+                <div class="card-col-dept">
+                  <div class="time-text" style="font-size: 18px;">${escapeHTML(r.allocatedRoute[0] || 'Origin')}</div>
+                  <div class="station-subtext">Origin Station</div>
                 </div>
-                <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 600; color: #64748b;">
-                  ${r.originalRoute
-                    .map((code, idx) => {
-                      const isBlocked =
-                        (code === track.from_code && r.originalRoute[idx + 1] === track.to_code) ||
-                        (code === track.to_code && r.originalRoute[idx - 1] === track.from_code);
-                      return `
-                      <span style="${isBlocked ? 'background: #fee2e2; color: #dc2626; text-decoration: line-through; border: 1px solid #fca5a5;' : 'background: #f1f5f9; color: #475569;'} padding: 2px 7px; border-radius: 6px;">
-                        ${escapeHTML(code)}
-                      </span>
-                      ${idx < r.originalRoute.length - 1 ? '<span style="color: #cbd5e1;">➔</span>' : ''}
-                    `;
-                    })
-                    .join('')}
+                <div class="card-col-route">
+                  <div class="runs-text" style="color: #0284c7; font-weight: 800; font-size: 12px;">+${r.delayMinutes} mins (${r.distanceKm} km)</div>
+                  <div class="route-graphic">
+                    <span class="route-node route-node-yellow"></span>
+                    <span class="route-line"></span>
+                    <span class="route-node route-node-blue"></span>
+                  </div>
+                </div>
+                <div class="card-col-arr">
+                  <div class="time-text" style="font-size: 18px;">${escapeHTML(r.allocatedRoute.at(-1) || 'Destination')}</div>
+                  <div class="station-subtext">Destination Station</div>
                 </div>
               </div>
 
+              <!-- Allocated Alternate Route Sequence -->
               <div style="margin-bottom: 14px;">
-                <div style="font-size: 11px; font-weight: 700; color: #16a34a; text-transform: uppercase; margin-bottom: 4px;">
-                  Allocated Alternate Route (Dijkstra Shortest Path):
+                <div style="font-size: 11px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 6px;">
+                  Allocated Bypass Route:
                 </div>
-                <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 700;">
+                <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 800;">
                   ${r.allocatedRoute
                     .map((code, idx) => {
                       const isBypass = (r.bypassSegment || []).includes(code);
                       return `
-                      <span style="${isBypass ? 'background: #dbeafe; color: #1d4ed8; border: 1.5px solid #93c5fd;' : 'background: #f8fafc; color: #334155; border: 1px solid #e2e8f0;'} padding: 2px 8px; border-radius: 6px;">
+                      <span style="${isBypass ? 'background: #dbeafe; color: #1d4ed8; border: 1.5px solid #000000;' : 'background: #f8fafc; color: #334155; border: 1.5px solid #e2e8f0;'} padding: 3px 9px; border-radius: 8px;">
                         ${escapeHTML(code)}
                       </span>
                       ${idx < r.allocatedRoute.length - 1 ? '<span style="color: #0284c7;">➔</span>' : ''}
@@ -2455,12 +2388,12 @@ function renderRaiseConflictResults(result, container) {
                 </div>
               </div>
 
-              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-top: 1px solid #f1f5f9; padding-top: 10px;">
-                <div style="display: flex; gap: 14px; color: #475569;">
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-top: 1.5px solid #f1f5f9; padding-top: 12px;">
+                <div style="display: flex; gap: 14px; color: #475569; font-weight: 700;">
                   <span><strong>Bypass Distance:</strong> ${r.distanceKm} km</span>
-                  <span><strong>Delay Incurred:</strong> +${r.delayMinutes} mins</span>
+                  <span><strong>Delay:</strong> +${r.delayMinutes} mins</span>
                 </div>
-                <button class="admin-small-btn view-reroute-graph-btn" data-train-number="${escapeHTML(r.trainNumber)}" data-train-name="${escapeHTML(r.trainName)}" data-allocated-route='${JSON.stringify(r.allocatedRoute)}' data-original-route='${JSON.stringify(r.originalRoute)}' data-bypass-segment='${JSON.stringify(r.bypassSegment || [])}' data-blocked-from="${escapeHTML(track.from_code || '')}" data-blocked-to="${escapeHTML(track.to_code || '')}" data-delay-minutes="${escapeHTML(String(r.delayMinutes || 0))}" data-distance-km="${escapeHTML(String(r.distanceKm || 0))}" style="font-size: 11px; padding: 5px 12px; min-height: 28px; cursor: pointer; background: #ffd43b; font-weight: 800; border: 1.5px solid #000; box-shadow: 0 2px 0 #000;">
+                <button class="admin-small-btn view-reroute-graph-btn" data-train-number="${escapeHTML(r.trainNumber)}" data-train-name="${escapeHTML(r.trainName)}" data-allocated-route='${JSON.stringify(r.allocatedRoute)}' data-original-route='${JSON.stringify(r.originalRoute)}' data-bypass-segment='${JSON.stringify(r.bypassSegment || [])}' data-blocked-from="${escapeHTML(track.from_code || '')}" data-blocked-to="${escapeHTML(track.to_code || '')}" data-delay-minutes="${escapeHTML(String(r.delayMinutes || 0))}" data-distance-km="${escapeHTML(String(r.distanceKm || 0))}" style="font-size: 12px; padding: 6px 14px; min-height: 32px; cursor: pointer; background: #ffd43b; color: #000000; font-weight: 800; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px;">
                   Visualise in Graph ➔
                 </button>
               </div>
@@ -2471,8 +2404,8 @@ function renderRaiseConflictResults(result, container) {
         </div>
       `
           : `
-        <div style="padding: 16px; background: #f8fafc; border-radius: 12px; text-align: center; color: #64748b; font-size: 13px;">
-          ✓ Track has been blocked successfully. No trains were currently scheduled across this track segment.
+        <div style="padding: 16px; background: #f8fafc; border: 2px solid #000000; border-radius: 14px; text-align: center; color: #64748b; font-size: 13px; font-weight: 700;">
+          ✓ Track blocked successfully. No trains were scheduled across this track segment.
         </div>
       `
       }
