@@ -1744,26 +1744,33 @@ function adminGraphSvg() {
               !isBlockedStation;
 
             let extraClass = '';
-            if (isBlockedStation) extraClass = 'blocked-station';
-            else if (isDetourStation) extraClass = 'detour-station';
-            else if (selected) extraClass = 'selected';
+            let circleFill = '#ffffff';
+            let strokeColor = '#000000';
+            let textColor = '#111111';
+
+            if (isBlockedStation) {
+              extraClass = 'blocked-station';
+              circleFill = '#ef4444';
+              strokeColor = '#000000';
+              textColor = '#ffffff';
+            } else if (isDetourStation) {
+              extraClass = 'detour-station';
+              circleFill = '#10b981';
+              strokeColor = '#000000';
+              textColor = '#ffffff';
+            } else if (selected) {
+              extraClass = 'selected';
+              circleFill = '#ffd43b';
+              strokeColor = '#000000';
+              textColor = '#000000';
+            }
 
             return `
               <g class="admin-node ${extraClass}" data-node-id="${escapeHTML(node.id)}" transform="translate(${p.x} ${p.y})">
-                <circle r="22"></circle>
-                <text text-anchor="middle" dominant-baseline="middle">${escapeHTML(node.code)}</text>
-                <title>${escapeHTML(node.name)} (${escapeHTML(node.code)}) - ${escapeHTML(node.region)}${isBlockedStation ? ' [DAMAGED TRACK STATION]' : ''}${isDetourStation ? ' [ALTERNATE BYPASS STATION]' : ''}</title>
+                <circle r="22" fill="${circleFill}" stroke="${strokeColor}" stroke-width="2.5"></circle>
+                <text text-anchor="middle" dominant-baseline="middle" fill="${textColor}" font-weight="800">${escapeHTML(node.code)}</text>
+                <title>${escapeHTML(node.name)} (${escapeHTML(node.code)}) - ${escapeHTML(node.region)}</title>
               </g>
-              ${
-                isDetourStation
-                  ? `
-                <g transform="translate(${p.x}, ${p.y - 28})">
-                  <rect x="-34" y="-8" width="68" height="16" rx="8" fill="#16a34a" stroke="#ffffff" stroke-width="1"></rect>
-                  <text x="0" y="3" text-anchor="middle" font-size="8.5" font-weight="800" fill="#ffffff" font-family="sans-serif">BYPASS</text>
-                </g>
-              `
-                  : ''
-              }
             `;
           })
           .join('')}
@@ -2312,72 +2319,54 @@ function renderRaiseConflictResults(result, container) {
     return;
   }
 
+  const nodesByCode = new Map((adminState.graph?.nodes || []).map((n) => [n.code, n.name]));
+
   container.innerHTML = `
     <div style="display: grid; gap: 16px;">
       ${rerouted
-        .map(
-          (r) => `
-        <div style="background: #ffffff; border: 3px solid #000000; border-radius: 16px; padding: 20px; box-shadow: 0 4px 0 #000000;">
-          <!-- User View Trains Ticket Card Layout -->
-          <div class="ticket-card" style="margin-bottom: 16px; cursor: default; background: #f8fafc; border: 2px solid #000000; box-shadow: none;">
-            <div class="card-col-left">
-              <div class="train-name">${escapeHTML(r.trainName)}</div>
-              <div class="train-no">Train No. - ${escapeHTML(r.trainNumber)}</div>
-            </div>
-            <div class="card-col-dept">
-              <div class="time-text" style="font-size: 18px;">${escapeHTML(r.allocatedRoute[0] || 'Origin')}</div>
-              <div class="station-subtext">Origin Station</div>
-            </div>
-            <div class="card-col-route">
-              <div class="runs-text" style="color: #0284c7; font-weight: 800; font-size: 12px;">+${r.delayMinutes} mins (${r.distanceKm} km)</div>
-              <div class="route-graphic">
-                <span class="route-node route-node-yellow"></span>
-                <span class="route-line"></span>
-                <span class="route-node route-node-blue"></span>
+        .map((r) => {
+          const routeStations = r.allocatedRoute || [];
+          return `
+          <div style="background: #ffffff; border: 2px solid #e2e8f0; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
+              <h4 style="margin: 0; font-size: 20px; font-weight: 800; color: #111111;">Route Details</h4>
+              <div style="font-size: 13.5px; font-weight: 800; color: #0284c7;">
+                Train #${escapeHTML(r.trainNumber)} - ${escapeHTML(r.trainName)}
               </div>
             </div>
-            <div class="card-col-arr">
-              <div class="time-text" style="font-size: 18px;">${escapeHTML(r.allocatedRoute.at(-1) || 'Destination')}</div>
-              <div class="station-subtext">Destination Station</div>
-            </div>
-          </div>
 
-          <!-- Original Route (Old Path) -->
-          <div style="margin-bottom: 12px;">
-            <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 6px;">
-              Original Route (Old Path):
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 22px;">
+              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
+                ${r.distanceKm || 0} km
+              </div>
+              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
+                ${r.delayMinutes || 0} min
+              </div>
+              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
+                ${routeStations.length} stations
+              </div>
+              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
+                1 regions
+              </div>
             </div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 700;">
-              ${r.originalRoute
-                .map((code) => `<span style="background: #f1f5f9; color: #475569; padding: 4px 10px; border-radius: 8px; border: 1.5px solid #000000;">${escapeHTML(code)}</span>`)
-                .join('<span style="color: #64748b;">-></span>')}
-            </div>
-          </div>
 
-          <!-- Allocated Route (New Path) -->
-          <div style="margin-bottom: 16px;">
-            <div style="font-size: 11px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 6px;">
-              Allocated Bypass Route (New Path):
-            </div>
-            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 800;">
-              ${r.allocatedRoute
-                .map((code) => `<span style="background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 8px; border: 1.5px solid #000000;">${escapeHTML(code)}</span>`)
-                .join('<span style="color: #0284c7;">-></span>')}
-            </div>
-          </div>
+            <ol style="margin: 0 0 22px 0; padding-left: 22px; font-size: 15px; font-weight: 800; color: #111111; line-height: 2.2;">
+              ${routeStations
+                .map((code) => {
+                  const name = nodesByCode.get(code);
+                  return `<li>${escapeHTML(code)}${name ? ' ' + escapeHTML(name) : ''}</li>`;
+                })
+                .join('')}
+            </ol>
 
-          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-top: 2px solid #000000; padding-top: 14px;">
-            <div style="display: flex; gap: 14px; color: #334155; font-weight: 700;">
-              <span><strong>Bypass Distance:</strong> ${r.distanceKm} km</span>
-              <span><strong>Delay:</strong> +${r.delayMinutes} mins</span>
+            <div style="display: flex; justify-content: flex-end; align-items: center; border-top: 1.5px solid #e2e8f0; padding-top: 16px;">
+              <button class="admin-small-btn view-reroute-graph-btn" data-train-number="${escapeHTML(r.trainNumber)}" data-train-name="${escapeHTML(r.trainName)}" data-allocated-route='${JSON.stringify(r.allocatedRoute)}' data-original-route='${JSON.stringify(r.originalRoute)}' data-bypass-segment='${JSON.stringify(r.bypassSegment || [])}' data-blocked-from="${escapeHTML(track.from_code || '')}" data-blocked-to="${escapeHTML(track.to_code || '')}" data-delay-minutes="${escapeHTML(String(r.delayMinutes || 0))}" data-distance-km="${escapeHTML(String(r.distanceKm || 0))}" style="font-size: 12px; padding: 6px 16px; min-height: 34px; cursor: pointer; background: #ffd43b; color: #000000; font-weight: 800; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px;">
+                Visualise in Graph -&gt;
+              </button>
             </div>
-            <button class="admin-small-btn view-reroute-graph-btn" data-train-number="${escapeHTML(r.trainNumber)}" data-train-name="${escapeHTML(r.trainName)}" data-allocated-route='${JSON.stringify(r.allocatedRoute)}' data-original-route='${JSON.stringify(r.originalRoute)}' data-bypass-segment='${JSON.stringify(r.bypassSegment || [])}' data-blocked-from="${escapeHTML(track.from_code || '')}" data-blocked-to="${escapeHTML(track.to_code || '')}" data-delay-minutes="${escapeHTML(String(r.delayMinutes || 0))}" data-distance-km="${escapeHTML(String(r.distanceKm || 0))}" style="font-size: 12px; padding: 6px 16px; min-height: 34px; cursor: pointer; background: #ffd43b; color: #000000; font-weight: 800; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px;">
-              Visualise in Graph ->
-            </button>
           </div>
-        </div>
-      `,
-        )
+        `;
+        })
         .join('')}
     </div>
   `;
@@ -2574,22 +2563,7 @@ async function loadSolveConflict() {
 
       <div id="solve-alert-container" style="margin-bottom: 18px;"></div>
 
-      <div style="display: flex; gap: 14px; margin-bottom: 22px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
-          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Open Conflicts</div>
-          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${conflicts.length} <span style="font-size: 12px; font-weight: 800; color: #0284c7; background: #e0f2fe; padding: 2px 8px; border-radius: 10px; border: 1.5px solid #000000;">Active</span></div>
-        </div>
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
-          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Rerouted Trains</div>
-          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalAffected}</div>
-        </div>
-        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 16px;">
-          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Network State</div>
-          <div style="font-size: 24px; font-weight: 800; color: #0284c7; margin-top: 4px;">DISRUPTED</div>
-        </div>
-      </div>
-
-      <div class="admin-conflict-list" style="display: grid; gap: 20px;">
+      <div class="admin-conflict-list" style="display: grid; gap: 16px;">
         ${conflicts
           .map((c) => {
             const hasTrack = c.from_station && c.to_station;
@@ -2600,16 +2574,11 @@ async function loadSolveConflict() {
               : 'Network Target';
 
             return `
-            <div class="admin-conflict-card" id="conflict-card-${escapeHTML(c.id)}" style="background: #ffffff; border: 3px solid #000000; border-radius: 16px; padding: 20px; box-shadow: 0 4px 0 #000000;">
-              <div class="admin-card-topline" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; border-bottom: 2px solid #000000; padding-bottom: 12px;">
+            <div class="admin-conflict-card" id="conflict-card-${escapeHTML(c.id)}" style="background: #ffffff; border: 2px solid #000000; border-radius: 16px; padding: 20px; box-shadow: 0 4px 0 #000000;">
+              <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
                 <div>
-                  <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                    <h4 style="margin: 0; font-size: 18px; font-weight: 800; color: #111111;">${escapeHTML(c.title || c.conflict_type || 'Track Disruption')}</h4>
-                    <span style="background: #e0f2fe; color: #0284c7; font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 12px; border: 1.5px solid #000000;">
-                      OPEN DISRUPTION
-                    </span>
-                  </div>
-                  <div style="font-size: 13px; font-weight: 800; color: #0284c7; margin-top: 4px;">
+                  <h4 style="margin: 0 0 4px; font-size: 18px; font-weight: 800; color: #111111;">${escapeHTML(c.title || c.conflict_type || 'Track Disruption')}</h4>
+                  <div style="font-size: 13.5px; font-weight: 800; color: #0284c7;">
                     ${targetLabel}
                   </div>
                 </div>
@@ -2618,60 +2587,30 @@ async function loadSolveConflict() {
                 </div>
               </div>
 
-              <!-- Ticket Card Graphic Layout matching View Trains -->
-              <div class="ticket-card" style="margin-bottom: 16px; cursor: default; background: #f8fafc; border: 2px solid #000000; box-shadow: none;">
-                <div class="card-col-left">
-                  <div class="train-name">${escapeHTML(c.from_station || 'Origin')} -&gt; ${escapeHTML(c.to_station || 'Destination')}</div>
-                  <div class="train-no">Disruption Type: ${escapeHTML(c.conflict_type || 'TRACK_FAILURE')}</div>
-                </div>
-                <div class="card-col-dept">
-                  <div class="time-text" style="font-size: 18px; color: #111111;">${escapeHTML(c.from_station || '-')}</div>
-                  <div class="station-subtext">${escapeHTML(c.from_station_name || 'From Station')}</div>
-                </div>
-                <div class="card-col-route">
-                  <div class="runs-text" style="color: #0284c7; font-weight: 800; font-size: 12px;">${c.affected_count || 0} Train(s) Rerouted</div>
-                  <div class="route-graphic">
-                    <span class="route-node route-node-yellow"></span>
-                    <span class="route-line"></span>
-                    <span class="route-node route-node-blue"></span>
-                  </div>
-                </div>
-                <div class="card-col-arr">
-                  <div class="time-text" style="font-size: 18px; color: #111111;">${escapeHTML(c.to_station || '-')}</div>
-                  <div class="station-subtext">${escapeHTML(c.to_station_name || 'To Station')}</div>
-                </div>
-              </div>
-
               ${
                 c.description
-                  ? `<div style="margin-bottom: 16px; padding: 12px 14px; background: #ffffff; border-radius: 12px; border: 2px solid #000000; font-size: 12.5px; color: #111111; line-height: 1.5; font-weight: 600;">
+                  ? `<div style="margin-bottom: 14px; font-size: 13px; color: #334155; line-height: 1.5; font-weight: 600;">
                       ${escapeHTML(c.description)}
                     </div>`
                   : ''
               }
 
-              <!-- Undo Resolution Box -->
-              <div style="background: #f0fdf4; border: 2px solid #000000; border-radius: 14px; padding: 16px;">
-                <div style="font-size: 12px; font-weight: 800; color: #15803d; text-transform: uppercase; margin-bottom: 8px;">
-                  Undo Conflict &amp; Track Restoration Action:
-                </div>
-                <div class="admin-resolve-row" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                  <input
-                    type="text"
-                    id="note-${escapeHTML(c.id)}"
-                    class="admin-input admin-resolution-note"
-                    placeholder="Resolution note (e.g. Track welded and inspected)..."
-                    value="Track repaired and safety inspected. Resuming normal operations."
-                    style="flex: 1; min-width: 240px; font-size: 12px; border: 2px solid #000000; border-radius: 10px; padding: 10px 14px; font-weight: 600; background: #ffffff;"
-                  />
-                  <button
-                    class="admin-action-btn undo-conflict-btn"
-                    data-id="${escapeHTML(c.id)}"
-                    style="background: #10b981; color: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 10px; font-weight: 800; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 10px 20px; font-size: 13px;"
-                  >
-                    Undo Conflict &amp; Restore Track
-                  </button>
-                </div>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; border-top: 1.5px solid #e2e8f0; padding-top: 14px;">
+                <input
+                  type="text"
+                  id="note-${escapeHTML(c.id)}"
+                  class="admin-input admin-resolution-note"
+                  placeholder="Resolution note (e.g. Track welded and inspected)..."
+                  value="Track repaired and safety inspected. Resuming normal operations."
+                  style="flex: 1; min-width: 240px; font-size: 12px; border: 2px solid #000000; border-radius: 10px; padding: 10px 14px; font-weight: 600; background: #ffffff;"
+                />
+                <button
+                  class="admin-action-btn undo-conflict-btn"
+                  data-id="${escapeHTML(c.id)}"
+                  style="background: #10b981; color: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 10px; font-weight: 800; cursor: pointer; padding: 10px 20px; font-size: 13px; white-space: nowrap;"
+                >
+                  Undo Conflict &amp; Restore Track
+                </button>
               </div>
             </div>
           `;
