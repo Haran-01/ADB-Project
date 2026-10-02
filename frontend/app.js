@@ -1630,15 +1630,10 @@ function renderAdminGraphPanel() {
 
   if (adminState.viewingTrain && adminState.route) {
     renderTrainRouteDetails(adminState.viewingTrain, adminState.route);
-  } else if (
-    !adminState.route &&
-    !adminState.autoRouteAttempted &&
-    sourceSelect?.value &&
-    destinationSelect?.value &&
-    sourceSelect.value !== destinationSelect.value
-  ) {
-    adminState.autoRouteAttempted = true;
-    visualiseAdminRoute();
+  } else if (adminState.route) {
+    renderRouteDetails(adminState.route);
+  } else {
+    document.getElementById('admin-route-details')?.classList.add('hidden');
   }
 }
 
@@ -1716,8 +1711,8 @@ function adminGraphSvg() {
   return `
     <svg id="admin-network-svg" style="height:${renderedHeight}px" viewBox="${adminState.viewBox.x} ${adminState.viewBox.y} ${adminState.viewBox.w} ${adminState.viewBox.h}" role="img" aria-label="Railway graph visualisation">
       <defs>
-        <marker id="route-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
-          <path d="M0,0.5 L5,3 L0,5.5 Z" fill="#2563eb"></path>
+        <marker id="route-arrow" markerWidth="3.5" markerHeight="3.5" refX="3.2" refY="1.75" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L3.5,1.75 L0,3.5 Z" fill="#1173f4"></path>
         </marker>
       </defs>
       <g class="admin-region-label-layer">
@@ -1741,7 +1736,7 @@ function adminGraphSvg() {
               adminState.viewingTrain.bypassSegment.includes(edge.sourceCode) &&
               adminState.viewingTrain.bypassSegment.includes(edge.targetCode);
             return `
-              <line class="admin-route-edge ${isDetour ? 'admin-detour-edge' : ''}" x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${isDetour ? '#0284c7' : '#2563eb'}" stroke-width="${isDetour ? '7' : '6'}" stroke-linecap="round" marker-end="url(#route-arrow)"></line>
+              <line class="admin-route-edge ${isDetour ? 'admin-detour-edge' : ''}" x1="${line.x1}" y1="${line.y1}" x2="${line.x2}" y2="${line.y2}" stroke="${isDetour ? '#0284c7' : '#1173f4'}" stroke-width="${isDetour ? '6' : '5'}" stroke-linecap="round" marker-end="url(#route-arrow)"></line>
               ${
                 isDetour
                   ? `
@@ -2037,6 +2032,12 @@ async function loadAdminRegions() {
       NR: 'railway_north',
     };
 
+    const hubsMap = {
+      SR: 'MAS (Chennai), SBC (Bengaluru), KPD, JTJ, TPJ, SA, MDU',
+      CR: 'BPL (Bhopal), CSMT (Mumbai), NGP (Nagpur), ET (Itarsi), BINA',
+      NR: 'NDLS (New Delhi), NZM (Hazrat Nizamuddin), AGC, MTJ, GWL, VGLJ',
+    };
+
     const totalStations = regions.reduce((sum, r) => sum + (r.stations || 0), 0);
     const totalTracks = regions.reduce((sum, r) => sum + (r.tracks || 0), 0);
     const totalActiveTrains = regions.reduce((sum, r) => sum + (r.activeTrains || 0), 0);
@@ -2045,73 +2046,79 @@ async function loadAdminRegions() {
     panel.innerHTML = `
       <div class="admin-panel-header" style="margin-bottom: 20px;">
         <div>
-          <h3>Regional Database Shards</h3>
-          <p>Distributed horizontal fragmentation across Indian Railways regional database nodes</p>
+          <h3 style="font-size: 22px; font-weight: 800; color: #111111; margin: 0;">Regional Networks & Database Shards</h3>
+          <p style="font-size: 13px; color: #64748b; font-weight: 500; margin-top: 4px;">Live status, metric aggregations, and regional node connectivity across railway zones.</p>
         </div>
       </div>
 
       <div style="display: flex; gap: 14px; margin-bottom: 24px; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Active Shards</div>
-          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${regions.length} <span style="font-size: 13px; font-weight: 600; color: #10a52a;">Online</span></div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Active Nodes</div>
+          <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${regions.length} <span style="font-size: 12px; font-weight: 700; color: #10a52a; background: #e8f9ee; padding: 2px 8px; border-radius: 10px; border: 1px solid #c2f0cc;">Online</span></div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Total Stations</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Total Stations</div>
           <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalStations}</div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Total Track Segments</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Track Segments</div>
           <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalTracks}</div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Running Trains</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Active Trains</div>
           <div style="font-size: 24px; font-weight: 800; color: #111111; margin-top: 4px;">${totalActiveTrains}</div>
         </div>
-        <div style="flex: 1; min-width: 160px; background: #f8fafc; border: 1.5px solid #dde3ea; border-radius: 14px; padding: 14px 18px;">
-          <div style="font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase;">Open Conflicts</div>
+        <div style="flex: 1; min-width: 160px; background: #ffffff; border: 2px solid #000000; box-shadow: 0 3px 0 #000000; border-radius: 14px; padding: 14px 18px;">
+          <div style="font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">Open Conflicts</div>
           <div style="font-size: 24px; font-weight: 800; color: ${totalOpenConflicts > 0 ? '#ef4444' : '#10a52a'}; margin-top: 4px;">${totalOpenConflicts}</div>
         </div>
       </div>
 
-      <div class="admin-region-grid">
+      <div class="admin-region-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
         ${regions
           .map((r) => {
             const schema = schemaMap[r.code] || `railway_${r.code.toLowerCase()}`;
+            const hubs = hubsMap[r.code] || 'Regional Network Hubs';
             return `
-            <div class="admin-region-card" style="display: flex; flex-direction: column; justify-content: space-between;">
+            <div class="admin-region-card" style="background: #ffffff; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
               <div>
-                <div class="admin-card-topline" style="margin-bottom: 14px;">
+                <div class="admin-card-topline" style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; border-bottom: 1.5px solid #f1f5f9; padding-bottom: 12px;">
                   <div>
-                    <h4 style="margin: 0; font-size: 17px; font-weight: 800; color: #111111;">${escapeHTML(r.name)} Railway (${escapeHTML(r.code)})</h4>
-                    <p style="margin: 3px 0 0; font-size: 12px; color: #64748b; font-weight: 600;">Schema: <code>${escapeHTML(schema)}</code></p>
+                    <h4 style="margin: 0; font-size: 18px; font-weight: 800; color: #111111;">${escapeHTML(r.name)} Division (${escapeHTML(r.code)})</h4>
+                    <p style="margin: 4px 0 0; font-size: 12px; color: #64748b; font-weight: 600;">Database Schema: <code style="background: #f1f5f9; padding: 2px 6px; border-radius: 6px; color: #0284c7; font-weight: 700;">${escapeHTML(schema)}</code></p>
                   </div>
-                  <span class="badge-green" style="background: #e8f9ee; color: #10a52a; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; border: 1px solid #c2f0cc;">${escapeHTML(r.status)}</span>
+                  <span class="badge-green" style="background: #e8f9ee; color: #10a52a; padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 800; border: 1.5px solid #c2f0cc;">${escapeHTML(r.status)}</span>
                 </div>
 
-                <div class="stats-grid" style="margin-bottom: 16px;">
-                  <div class="stat-box">
-                    <h5>Stations</h5>
-                    <p>${r.stations}</p>
+                <div class="stats-grid" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px;">
+                  <div class="stat-box" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center;">
+                    <h5 style="margin: 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Stations</h5>
+                    <p style="margin: 4px 0 0; font-size: 20px; font-weight: 800; color: #111111;">${r.stations}</p>
                   </div>
-                  <div class="stat-box">
-                    <h5>Tracks</h5>
-                    <p>${r.tracks}</p>
+                  <div class="stat-box" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center;">
+                    <h5 style="margin: 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Tracks</h5>
+                    <p style="margin: 4px 0 0; font-size: 20px; font-weight: 800; color: #111111;">${r.tracks}</p>
                   </div>
-                  <div class="stat-box">
-                    <h5>Active Trains</h5>
-                    <p>${r.activeTrains}</p>
+                  <div class="stat-box" style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px; text-align: center;">
+                    <h5 style="margin: 0; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase;">Running</h5>
+                    <p style="margin: 4px 0 0; font-size: 20px; font-weight: 800; color: #111111;">${r.activeTrains}</p>
                   </div>
                 </div>
 
-                <div style="margin-bottom: 12px; font-size: 13px;">
-                  <span style="font-weight: 700; color: #334155;">Connected Regions:</span>
+                <div style="margin-bottom: 14px; font-size: 12px; color: #475569;">
+                  <span style="font-weight: 800; color: #0f172a;">Primary Junctions & Hubs:</span>
+                  <div style="margin-top: 4px; font-weight: 600; color: #334155; line-height: 1.4;">${escapeHTML(hubs)}</div>
+                </div>
+
+                <div style="margin-bottom: 14px; font-size: 12px;">
+                  <span style="font-weight: 800; color: #0f172a;">Connected Regional Nodes:</span>
                   <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
                     ${
                       r.connectedRegions?.length
                         ? r.connectedRegions
                             .map(
                               (cr) =>
-                                `<span style="background: #e0f2fe; color: #0284c7; padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; border: 1px solid #bae6fd;">${escapeHTML(cr)}</span>`,
+                                `<span style="background: #e0f2fe; color: #0284c7; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1px solid #bae6fd;">${escapeHTML(cr)}</span>`,
                             )
                             .join('')
                         : '<span style="color: #94a3b8; font-size: 12px;">None (isolated)</span>'
@@ -2120,12 +2127,12 @@ async function loadAdminRegions() {
                 </div>
               </div>
 
-              <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
-                <span style="font-size: 12px; font-weight: 600; color: ${r.openConflicts > 0 ? '#ef4444' : '#10a52a'};">
-                  ${r.openConflicts > 0 ? `⚠️ ${r.openConflicts} conflict(s) active` : '✓ All lines clear'}
+              <div style="margin-top: 14px; padding-top: 14px; border-top: 1.5px solid #f1f5f9; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 12px; font-weight: 700; color: ${r.openConflicts > 0 ? '#ef4444' : '#10a52a'}; display: flex; align-items: center; gap: 4px;">
+                  ${r.openConflicts > 0 ? `⚠️ ${r.openConflicts} conflict active` : '✓ All lines operational'}
                 </span>
-                <button class="admin-small-btn view-region-graph-btn" data-region-code="${escapeHTML(r.code)}" style="font-size: 12px; padding: 4px 12px; min-height: 32px;">
-                  Filter Graph
+                <button class="admin-small-btn view-region-graph-btn" data-region-code="${escapeHTML(r.code)}" style="font-size: 12px; padding: 6px 14px; min-height: 32px; font-weight: 800; background: #ffd43b; color: #000000; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px; cursor: pointer;">
+                  Filter Graph ➔
                 </button>
               </div>
             </div>
@@ -2146,11 +2153,11 @@ async function loadAdminRegions() {
     panel.innerHTML = `
       <div class="admin-panel-header">
         <div>
-          <h3>Regional Database Shards</h3>
-          <p>Distributed horizontal fragmentation across Indian Railways regional database nodes</p>
+          <h3 style="font-size: 22px; font-weight: 800; color: #111111; margin: 0;">Regional Networks & Database Shards</h3>
+          <p style="font-size: 13px; color: #64748b; font-weight: 500; margin-top: 4px;">Live status, metric aggregations, and regional node connectivity across railway zones.</p>
         </div>
       </div>
-      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 12px; margin-top: 16px;">
+      <div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 1.5px solid #fee2e2; border-radius: 12px; margin-top: 16px; font-weight: 700;">
         Failed to load regional database statistics: ${escapeHTML(error.message || 'Server error')}
       </div>
     `;
