@@ -2334,19 +2334,28 @@ function renderRaiseConflictResults(result, container) {
         .map(
           (r) => `
         <div style="background: #ffffff; border: 3px solid #000000; border-radius: 16px; padding: 20px; box-shadow: 0 4px 0 #000000;">
-          <!-- Train Info Header -->
-          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; border-bottom: 2px solid #000000; padding-bottom: 12px;">
-            <div>
-              <h4 style="margin: 0; font-size: 18px; font-weight: 800; color: #111111;">
-                Train #${escapeHTML(r.trainNumber)}
-              </h4>
-              <div style="font-size: 13.5px; font-weight: 700; color: #475569; margin-top: 2px;">
-                ${escapeHTML(r.trainName)}
+          <!-- User View Trains Ticket Card Layout Header (Image 2 style) -->
+          <div class="ticket-card" style="margin-bottom: 16px; cursor: default; background: #f8fafc; border: 2px solid #000000; box-shadow: none;">
+            <div class="card-col-left">
+              <div class="train-name">${escapeHTML(r.trainName)}</div>
+              <div class="train-no">Train No. - ${escapeHTML(r.trainNumber)}</div>
+            </div>
+            <div class="card-col-dept">
+              <div class="time-text" style="font-size: 18px;">${escapeHTML(r.allocatedRoute?.[0] || 'Origin')}</div>
+              <div class="station-subtext">Origin Station</div>
+            </div>
+            <div class="card-col-route">
+              <div class="runs-text" style="color: #0284c7; font-weight: 800; font-size: 12px;">+${r.delayMinutes} mins (${r.distanceKm} km)</div>
+              <div class="route-graphic">
+                <span class="route-node route-node-yellow"></span>
+                <span class="route-line"></span>
+                <span class="route-node route-node-blue"></span>
               </div>
             </div>
-            <span style="font-size: 11px; font-weight: 800; background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 12px; border: 1.5px solid #000000;">
-              TRACK REROUTED
-            </span>
+            <div class="card-col-arr">
+              <div class="time-text" style="font-size: 18px;">${escapeHTML(r.allocatedRoute?.at(-1) || 'Destination')}</div>
+              <div class="station-subtext">Destination Station</div>
+            </div>
           </div>
 
           <!-- Original Route (Old Path) -->
