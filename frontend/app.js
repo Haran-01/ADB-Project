@@ -2319,54 +2319,64 @@ function renderRaiseConflictResults(result, container) {
     return;
   }
 
-  const nodesByCode = new Map((adminState.graph?.nodes || []).map((n) => [n.code, n.name]));
-
   container.innerHTML = `
     <div style="display: grid; gap: 16px;">
       ${rerouted
-        .map((r) => {
-          const routeStations = r.allocatedRoute || [];
-          return `
-          <div style="background: #ffffff; border: 2px solid #e2e8f0; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px;">
-              <h4 style="margin: 0; font-size: 20px; font-weight: 800; color: #111111;">Route Details</h4>
-              <div style="font-size: 13.5px; font-weight: 800; color: #0284c7;">
-                Train #${escapeHTML(r.trainNumber)} - ${escapeHTML(r.trainName)}
+        .map(
+          (r) => `
+        <div style="background: #ffffff; border: 3px solid #000000; border-radius: 16px; padding: 20px; box-shadow: 0 4px 0 #000000;">
+          <!-- Train Info Header -->
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; border-bottom: 2px solid #000000; padding-bottom: 12px;">
+            <div>
+              <h4 style="margin: 0; font-size: 18px; font-weight: 800; color: #111111;">
+                Train #${escapeHTML(r.trainNumber)}
+              </h4>
+              <div style="font-size: 13.5px; font-weight: 700; color: #475569; margin-top: 2px;">
+                ${escapeHTML(r.trainName)}
               </div>
             </div>
+            <span style="font-size: 11px; font-weight: 800; background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 12px; border: 1.5px solid #000000;">
+              TRACK REROUTED
+            </span>
+          </div>
 
-            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 22px;">
-              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
-                ${r.distanceKm || 0} km
-              </div>
-              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
-                ${r.delayMinutes || 0} min
-              </div>
-              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
-                ${routeStations.length} stations
-              </div>
-              <div style="background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 14px 18px; font-size: 15px; font-weight: 800; color: #111111;">
-                1 regions
-              </div>
+          <!-- Original Route (Old Path) -->
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 6px;">
+              Original Route (Old Path):
             </div>
-
-            <ol style="margin: 0 0 22px 0; padding-left: 22px; font-size: 15px; font-weight: 800; color: #111111; line-height: 2.2;">
-              ${routeStations
-                .map((code) => {
-                  const name = nodesByCode.get(code);
-                  return `<li>${escapeHTML(code)}${name ? ' ' + escapeHTML(name) : ''}</li>`;
-                })
-                .join('')}
-            </ol>
-
-            <div style="display: flex; justify-content: flex-end; align-items: center; border-top: 1.5px solid #e2e8f0; padding-top: 16px;">
-              <button class="admin-small-btn view-reroute-graph-btn" data-train-number="${escapeHTML(r.trainNumber)}" data-train-name="${escapeHTML(r.trainName)}" data-allocated-route='${JSON.stringify(r.allocatedRoute)}' data-original-route='${JSON.stringify(r.originalRoute)}' data-bypass-segment='${JSON.stringify(r.bypassSegment || [])}' data-blocked-from="${escapeHTML(track.from_code || '')}" data-blocked-to="${escapeHTML(track.to_code || '')}" data-delay-minutes="${escapeHTML(String(r.delayMinutes || 0))}" data-distance-km="${escapeHTML(String(r.distanceKm || 0))}" style="font-size: 12px; padding: 6px 16px; min-height: 34px; cursor: pointer; background: #ffd43b; color: #000000; font-weight: 800; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px;">
-                Visualise in Graph -&gt;
-              </button>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 700;">
+              ${(r.originalRoute || [])
+                .map((code) => `<span style="background: #f1f5f9; color: #475569; padding: 4px 10px; border-radius: 8px; border: 1.5px solid #000000;">${escapeHTML(code)}</span>`)
+                .join('<span style="color: #64748b;">-&gt;</span>')}
             </div>
           </div>
-        `;
-        })
+
+          <!-- Allocated Route (New Path) -->
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: 11px; font-weight: 800; color: #0284c7; text-transform: uppercase; margin-bottom: 6px;">
+              Allocated Bypass Route (New Path):
+            </div>
+            <div style="display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; font-weight: 800;">
+              ${(r.allocatedRoute || [])
+                .map((code) => `<span style="background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 8px; border: 1.5px solid #000000;">${escapeHTML(code)}</span>`)
+                .join('<span style="color: #0284c7;">-&gt;</span>')}
+            </div>
+          </div>
+
+          <!-- Footer Info & Visualise Button -->
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-top: 2px solid #000000; padding-top: 14px;">
+            <div style="display: flex; gap: 14px; color: #334155; font-weight: 700;">
+              <span><strong>Bypass Distance:</strong> ${r.distanceKm || 0} km</span>
+              <span><strong>Delay:</strong> +${r.delayMinutes || 0} mins</span>
+            </div>
+            <button class="admin-small-btn view-reroute-graph-btn" data-train-number="${escapeHTML(r.trainNumber)}" data-train-name="${escapeHTML(r.trainName)}" data-allocated-route='${JSON.stringify(r.allocatedRoute)}' data-original-route='${JSON.stringify(r.originalRoute)}' data-bypass-segment='${JSON.stringify(r.bypassSegment || [])}' data-blocked-from="${escapeHTML(track.from_code || '')}" data-blocked-to="${escapeHTML(track.to_code || '')}" data-delay-minutes="${escapeHTML(String(r.delayMinutes || 0))}" data-distance-km="${escapeHTML(String(r.distanceKm || 0))}" style="font-size: 12px; padding: 6px 16px; min-height: 34px; cursor: pointer; background: #ffd43b; color: #000000; font-weight: 800; border: 2px solid #000000; box-shadow: 0 2px 0 #000000; border-radius: 20px;">
+              Visualise in Graph -&gt;
+            </button>
+          </div>
+        </div>
+      `,
+        )
         .join('')}
     </div>
   `;
