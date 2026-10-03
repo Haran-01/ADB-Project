@@ -49,6 +49,102 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ==========================================================================
+   Custom Neo-Brutalist UI Modal Popup Helper
+   ========================================================================== */
+function showUiPopup({ title = 'Notification', message = '', buttonText = 'OK', badge = 'SUCCESS' } = {}) {
+  const existing = document.getElementById('custom-ui-popup-overlay');
+  if (existing) existing.remove();
+
+  const isSuccess = badge === 'SUCCESS';
+  const badgeBg = isSuccess ? '#dcfce7' : '#fee2e2';
+  const badgeColor = isSuccess ? '#166534' : '#dc2626';
+  const badgeBorder = isSuccess ? '#86efac' : '#fca5a5';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'custom-ui-popup-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 99999;
+    padding: 20px;
+    box-sizing: border-box;
+  `;
+
+  overlay.innerHTML = `
+    <div style="
+      background: #ffffff;
+      border: 3px solid #000000;
+      box-shadow: 6px 6px 0 #000000;
+      border-radius: 20px;
+      width: 100%;
+      max-width: 440px;
+      padding: 26px 28px;
+      text-align: center;
+    ">
+      <div style="margin-bottom: 12px;">
+        <span style="
+          font-size: 11px;
+          font-weight: 800;
+          background: ${badgeBg};
+          color: ${badgeColor};
+          border: 1.5px solid ${badgeBorder};
+          padding: 3px 12px;
+          border-radius: 12px;
+          letter-spacing: 0.5px;
+          display: inline-block;
+          text-transform: uppercase;
+        ">
+          ${escapeHTML(badge)}
+        </span>
+      </div>
+
+      <h3 style="margin: 0 0 10px; font-size: 20px; font-weight: 800; color: #111111;">
+        ${escapeHTML(title)}
+      </h3>
+
+      <p style="margin: 0 0 22px; font-size: 13.5px; color: #475569; font-weight: 600; line-height: 1.5; white-space: pre-line;">
+        ${escapeHTML(message)}
+      </p>
+
+      <button id="custom-ui-popup-btn" style="
+        background: #ffd43b;
+        color: #000000;
+        border: 2px solid #000000;
+        box-shadow: 0 3px 0 #000000;
+        border-radius: 20px;
+        padding: 10px 32px;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+        outline: none;
+      ">
+        ${escapeHTML(buttonText)}
+      </button>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const closePopup = () => {
+    overlay.remove();
+  };
+
+  document.getElementById('custom-ui-popup-btn')?.focus();
+  document.getElementById('custom-ui-popup-btn')?.addEventListener('click', closePopup);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closePopup();
+  });
+}
+
+/* ==========================================================================
    Navigation & Routing Handler
    ========================================================================== */
 function initNavigation() {
@@ -2646,13 +2742,23 @@ async function loadSolveConflict() {
           });
 
           const restoredCount = res.restoredTrainsCount || 0;
-          alert(`Track Conflict Successfully Undone & Resolved!\n\nTrack segment restored to ACTIVE status.\n${restoredCount} train(s) returned to original route.`);
+          showUiPopup({
+            title: 'Track Conflict Undone!',
+            message: `Track segment has been altered back to ACTIVE status.\n${restoredCount} train(s) returned from detours to original scheduled routes.`,
+            buttonText: 'OK',
+            badge: 'SUCCESS',
+          });
           loadSolveConflict();
         } catch (err) {
           btn.disabled = false;
           btn.innerHTML = `Undo Conflict &amp; Restore Track`;
           btn.style.opacity = '1';
-          alert(`Failed to resolve conflict: ${err.message || 'Server error'}`);
+          showUiPopup({
+            title: 'Resolution Failed',
+            message: err.message || 'Server error occurred while resolving conflict.',
+            buttonText: 'Close',
+            badge: 'ERROR',
+          });
         }
       });
     });
