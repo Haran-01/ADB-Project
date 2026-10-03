@@ -2541,10 +2541,7 @@ async function loadSolveConflict() {
         </div>
 
         <div style="background: #f0fdf4; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; padding: 48px 24px; text-align: center; max-width: 640px; margin: 20px auto 0;">
-          <h4 style="margin: 0 0 10px; font-size: 19px; font-weight: 800; color: #166534;">All Railway Tracks Clear</h4>
-          <p style="margin: 0 auto 20px; font-size: 13.5px; color: #15803d; line-height: 1.6;">
-            There are currently no active conflicts or track damages. All train journeys are operating on their normal scheduled routes across all regional shards.
-          </p>
+          <h4 style="margin: 0 0 16px; font-size: 19px; font-weight: 800; color: #166534;">All Railway Tracks Clear</h4>
           <button class="btn-yellow-pill" id="goto-raise-btn" style="padding: 9px 24px; font-size: 13px; font-weight: 800; cursor: pointer;">
             Simulate Track Conflict -&gt;
           </button>
@@ -2569,8 +2566,6 @@ async function loadSolveConflict() {
           Refresh
         </button>
       </div>
-
-      <div id="solve-alert-container" style="margin-bottom: 18px;"></div>
 
       <div class="admin-conflict-list" style="display: grid; gap: 16px;">
         ${conflicts
@@ -2651,34 +2646,8 @@ async function loadSolveConflict() {
           });
 
           const restoredCount = res.restoredTrainsCount || 0;
-          const restoredTrainsList = (res.restoredTrains || [])
-            .map((t) => `#${t.trainNumber} (${t.trainName})`)
-            .join(', ');
-
-          const alertContainer = document.getElementById('solve-alert-container');
-          if (alertContainer) {
-            alertContainer.innerHTML = `
-              <div style="background: #f0fdf4; border: 2px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 14px; padding: 16px 20px;">
-                <div style="display: flex; align-items: flex-start; justify-content: space-between;">
-                  <div>
-                    <div style="font-size: 15px; font-weight: 800; color: #15803d;">
-                      Track Conflict Successfully Undone &amp; Resolved!
-                    </div>
-                    <div style="font-size: 13px; color: #166534; margin-top: 6px; line-height: 1.5; font-weight: 600;">
-                      Track segment has been altered back to <strong>ACTIVE</strong> status.<br/>
-                      <strong>${restoredCount} train(s)</strong> have been returned from their bypass detours back to their original scheduled routes:
-                      <div style="font-weight: 800; color: #15803d; margin-top: 4px;">${restoredTrainsList || 'None rerouted'}</div>
-                    </div>
-                  </div>
-                  <button onclick="this.parentElement.parentElement.remove()" style="background: none; border: none; font-size: 16px; font-weight: bold; cursor: pointer; color: #15803d;">X</button>
-                </div>
-              </div>
-            `;
-          }
-
-          setTimeout(() => {
-            loadSolveConflict();
-          }, 2000);
+          alert(`Track Conflict Successfully Undone & Resolved!\n\nTrack segment restored to ACTIVE status.\n${restoredCount} train(s) returned to original route.`);
+          loadSolveConflict();
         } catch (err) {
           btn.disabled = false;
           btn.innerHTML = `Undo Conflict &amp; Restore Track`;
