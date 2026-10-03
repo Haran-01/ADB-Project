@@ -1,25 +1,18 @@
-import { createServer } from 'node:http';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { Server } from 'socket.io';
 import { PGlite } from '@electric-sql/pglite';
 import { postgis } from '@electric-sql/pglite-postgis';
 import { createApp } from '../backend/src/app.js';
 import { AnalysisService } from '../backend/src/modules/analysis/service.js';
-import { EventWorker } from '../backend/src/workers/events.js';
-import { projectRoot } from './lib/database.mjs';
 
-function getSqlFiles(dir) {
-  const full = path.join(projectRoot, dir);
-  if (!existsSync(full)) return [];
-  return readdirSync(full)
-    .filter((f) => f.endsWith('.sql'))
-    .sort()
-    .map((f) => readFileSync(path.join(full, f), 'utf8'));
-}
+const projectRoot = process.cwd();
 
-async function createInMemoryDatabase() {
+let appInstance = null;
+
+async function getApp() {
+  if (appInstance) return appInstance;
+
   const db = new PGlite({ extensions: { postgis } });
   const sqlDirs = [
     'database/migrations',
@@ -31,7 +24,11 @@ async function createInMemoryDatabase() {
     'database/seeds/extra_nodes',
   ];
   for (const dir of sqlDirs) {
-    for (const sql of getSqlFiles(dir)) {
+    const full = path.join(projectRoot, dir);
+    if (!existsSync(full)) continue;
+    const files = readdirSync(full).filter((f) => f.endsWith('.sql')).sort();
+    for (const file of files) {
+      const sql = readFileSync(path.join(full, file), 'utf8');
       if (sql.trim().startsWith('\\')) continue;
       const cleanSql = sql.replace(/create extension if not exists pgcrypto[^;]*;/gi, '-- skipped pgcrypto');
       await db.exec(cleanSql);
@@ -41,25 +38,18 @@ async function createInMemoryDatabase() {
       }
     }
   }
+
   const expanderPath = path.join(projectRoot, 'scripts/expand-train-data.mjs');
   if (existsSync(expanderPath)) {
     const { expandTrainData } = await import(pathToFileURL(expanderPath).href);
     await expandTrainData(db);
   }
-  return db;
-}
 
-async function main() {
-  console.log('Initializing in-memory PostgreSQL + PostGIS database with PGlite...');
-  const client = await createInMemoryDatabase();
-  console.log('Database initialized successfully with schema, PostGIS, seeds, triggers, and views!');
-
-  // In-memory graph router matching Neo4j behavior for local standalone mode
   const graph = {
     health: async () => true,
     sync: async () => {},
     routes: async (from, to, excludeTracks = []) => {
-      const res = await client.query(
+      const res = await db.query(
         `with recursive paths(path, last_station, total_dist) as (
           select array[s.station_code]::text[], s.station_code, 0.0
           from public.stations s where s.station_code = $1
@@ -82,39 +72,21 @@ async function main() {
     },
   };
 
-  const analysis = new AnalysisService(client, graph);
+  const analysis = new AnalysisService(db, graph);
   const env = {
     PORT: process.env.PORT || 4003,
-    HOST: process.env.HOST || '0.0.0.0',
-    NODE_ENV: process.env.NODE_ENV || 'production',
+    HOST: '0.0.0.0',
+    NODE_ENV: 'production',
     FRONTEND_ORIGIN: '*',
-    WORKER_ENABLED: process.env.WORKER_ENABLED ?? 'true',
+    WORKER_ENABLED: 'false',
     WORKER_POLL_MS: 1000,
   };
 
-  const app = createApp({ pool: client, graph, analysis, env });
-  const server = createServer(app);
-  const io = new Server(server, { cors: { origin: '*' } });
-
-  const worker = new EventWorker({ pool: client, analysis, io, env });
-
-  server.listen(env.PORT, env.HOST, () => {
-    console.log(`=======================================================`);
-    console.log(`🚀 Intelligent Railway API running on http://${env.HOST}:${env.PORT}`);
-    console.log(`⚡ Standalone mode with PGlite (PostgreSQL + PostGIS + Active Triggers)`);
-    console.log(`=======================================================`);
-    if (env.WORKER_ENABLED === 'true') worker.start();
-  });
-
-  process.on('SIGINT', async () => {
-    await worker.stop();
-    await new Promise((r) => io.close(r));
-    await client.close();
-    process.exit(0);
-  });
+  appInstance = createApp({ pool: db, graph, analysis, env });
+  return appInstance;
 }
 
-main().catch((err) => {
-  console.error('Failed to start standalone server:', err);
-  process.exit(1);
-});
+export default async function handler(req, res) {
+  const app = await getApp();
+  return app(req, res);
+}
