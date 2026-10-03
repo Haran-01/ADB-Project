@@ -2192,28 +2192,6 @@ async function loadAdminRegions() {
                       .join('')}
                   </div>
                 </div>
-
-                <div style="margin-bottom: 14px; background: #f8fafc; border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 12px; font-size: 12px;">
-                  <div style="margin-bottom: 4px; font-weight: 700; color: #334155;"><strong>Coverage:</strong> ${escapeHTML(info.routeKm)} Network</div>
-                  <div style="margin-bottom: 4px; font-weight: 700; color: #334155;"><strong>Traffic Density:</strong> ${escapeHTML(info.traffic)}</div>
-                  <div style="font-weight: 700; color: #0284c7;">${escapeHTML(info.electrification)}</div>
-                </div>
-
-                <div style="margin-bottom: 14px; font-size: 12px;">
-                  <span style="font-weight: 800; color: #000000;">Connected Regional Zones:</span>
-                  <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;">
-                    ${
-                      r.connectedRegions?.length
-                        ? r.connectedRegions
-                            .map(
-                              (cr) =>
-                                `<span style="background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 800; border: 1.5px solid #000000;">${escapeHTML(cr)}</span>`,
-                            )
-                            .join('')
-                        : '<span style="color: #94a3b8; font-size: 12px;">None (isolated)</span>'
-                    }
-                  </div>
-                </div>
               </div>
 
               <div style="margin-top: 14px; padding-top: 14px; border-top: 2px solid #000000; display: flex; justify-content: space-between; align-items: center;">
