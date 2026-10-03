@@ -2500,34 +2500,15 @@ function renderTrainRouteDetails(train, route) {
         </div>
       </div>
 
-      <div style="margin-bottom: 12px; background: #fef2f2; border: 1px solid #fee2e2; border-radius: 8px; padding: 8px 12px; font-size: 12px;">
-        <span style="font-weight: 700; color: #dc2626;">Damaged Impassable Track:</span>
-        <div style="font-weight: 800; color: #991b1b; margin-top: 2px;">
-          ${escapeHTML(train.blockedFrom)} - ${escapeHTML(train.blockedTo)} (BLOCKED)
-        </div>
-      </div>
-
-      <div style="margin-bottom: 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 8px 12px; font-size: 12px;">
-        <span style="font-weight: 700; color: #1d4ed8;">Alternate Detour Path Allocated:</span>
-        <div style="font-weight: 800; color: #1e40af; margin-top: 2px;">
-          ${(train.bypassSegment || []).join(' -> ')}
-        </div>
-        <div style="font-size: 11px; color: #3b82f6; margin-top: 3px;">
-          Bypass Delay: +${escapeHTML(String(train.delayMinutes || 0))} mins | Distance: ${escapeHTML(String(train.distanceKm || 0))} km
-        </div>
-      </div>
-
       <h5 style="margin: 12px 0 6px; font-size: 12px; font-weight: 800; color: #334155; text-transform: uppercase;">
         Full Scheduled Route Stations (${route.stations.length})
       </h5>
       <ol class="admin-route-list">
         ${route.stations
           .map((st) => {
-            const isBypass = (train.bypassSegment || []).includes(st.code);
             return `
-              <li style="${isBypass ? 'background: #eff6ff; padding: 3px 6px; border-radius: 6px; font-weight: 700;' : ''}">
+              <li>
                 <strong>${escapeHTML(st.code)}</strong> ${escapeHTML(st.name)}
-                ${isBypass ? '<span style="font-size: 10px; background: #2563eb; color: #fff; padding: 1px 6px; border-radius: 8px; margin-left: 6px;">Detour Station</span>' : ''}
               </li>
             `;
           })
