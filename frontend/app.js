@@ -2312,8 +2312,17 @@ function renderRaiseConflictResults(result, container) {
 
   if (rerouted.length === 0) {
     container.innerHTML = `
-      <div style="padding: 20px; background: #ffffff; border: 3px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; text-align: center; color: #111111; font-size: 14px; font-weight: 700;">
-        Track ${escapeHTML(track.from_code || '')} -> ${escapeHTML(track.to_code || '')} disabled. No active trains scheduled on this track.
+      <div style="padding: 24px; background: #ffffff; border: 3px solid #000000; box-shadow: 0 4px 0 #000000; border-radius: 16px; text-align: center; color: #111111;">
+        <div style="font-size: 16px; font-weight: 800; color: #111111; margin-bottom: 6px;">
+          Track Disruption Logged &amp; Track Disabled
+        </div>
+        <div style="font-size: 13px; font-weight: 800; color: #0284c7; margin-bottom: 8px;">
+          Track Segment: [${escapeHTML(track.from_code || '')}] -&gt; [${escapeHTML(track.to_code || '')}]
+        </div>
+        <div style="font-size: 12.5px; font-weight: 600; color: #64748b; line-height: 1.5;">
+          The track segment has been marked as <strong>BLOCKED</strong> in the database.<br/>
+          There are currently <strong>0 active trains</strong> scheduled on this track, so no train rerouting was required.
+        </div>
       </div>
     `;
     return;
