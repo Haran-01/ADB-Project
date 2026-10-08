@@ -6,13 +6,10 @@ import { DistributedQueryEngine } from '../../db/distributed.js';
 const trainRefSchema = z.string().trim().min(1).max(40);
 const liveQuerySchema = z
   .object({
-    service_date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/)
-      .optional(),
+    service_date: z.iso.date().optional(),
     time: z
       .string()
-      .regex(/^\d{2}:\d{2}(:\d{2})?$/)
+      .regex(/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/)
       .optional(),
     server_time: z.string().datetime({ offset: true }).optional(),
   })

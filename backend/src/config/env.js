@@ -15,11 +15,15 @@ export function getEnv(values = loadEnv()) {
       NEO4J_PASSWORD: z.string().min(1),
       NEO4J_DATABASE: z.string().default('neo4j'),
       API_TOKEN: z.string().min(24).optional(),
+      ADMIN_USERNAME: z.string().min(1).default('admin'),
+      ADMIN_PASSWORD: z.string().min(12).optional(),
       WORKER_ENABLED: z.enum(['true', 'false']).default('true'),
       WORKER_POLL_MS: z.coerce.number().int().min(100).default(2000),
     })
     .passthrough()
     .superRefine((v, ctx) => {
+      if ((v.NODE_ENV === 'production' || v.HOST !== '127.0.0.1') && !v.ADMIN_PASSWORD)
+        ctx.addIssue({ code: 'custom', message: 'ADMIN_PASSWORD is required for production or non-loopback binding', path: ['ADMIN_PASSWORD'] });
       if ((v.NODE_ENV === 'production' || v.HOST !== '127.0.0.1') && !v.API_TOKEN)
         ctx.addIssue({
           code: 'custom',

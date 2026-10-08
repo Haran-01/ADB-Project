@@ -18,9 +18,8 @@ const liveTrackState = {
 };
 const DEFAULT_ADMIN_GRAPH_CANVAS = { width: 1180, height: 760 };
 const ADMIN_REGION_ORDER = ['SR', 'CR', 'NR'];
-const DEFAULT_ADMIN_TOKEN = 'admin-session-token-12345';
 const adminState = {
-  token: localStorage.getItem('adminToken') || DEFAULT_ADMIN_TOKEN,
+  token: localStorage.getItem('adminToken') || '',
   graph: null,
   route: null,
   selectedSource: 'MAS',
@@ -1153,18 +1152,10 @@ async function authenticateAdmin(username, password) {
       return true;
     }
   } catch (err) {
-    // Keep the local demo usable when opened without the API server.
+    console.error('Admin login failed', err);
   }
 
-  const normalizedUser = username.toLowerCase();
-  const demoAuthenticated =
-    (normalizedUser === 'admin' || normalizedUser === 'admin@railway.gov') &&
-    (password === 'admin123' || password === 'admin');
-  if (demoAuthenticated) {
-    adminState.token = 'admin-session-token-12345';
-    localStorage.setItem('adminToken', adminState.token);
-  }
-  return demoAuthenticated;
+  return false;
 }
 
 async function loadAdminStatsDB() {
@@ -1192,7 +1183,7 @@ async function loadAdminStatsDB() {
 }
 
 async function adminFetch(path, options = {}) {
-  const token = adminState.token || localStorage.getItem('adminToken') || DEFAULT_ADMIN_TOKEN;
+  const token = adminState.token || localStorage.getItem('adminToken') || '';
   const res = await fetch(path, {
     ...options,
     headers: {
@@ -1585,7 +1576,6 @@ async function loadAdminGraph(region = '') {
   if (!panel) return;
   panel.innerHTML = `<div class="loading-state" style="padding: 24px; color: #64748b; font-weight: 500;">Loading complete regional railway graph...</div>`;
   try {
-    if (!adminState.token) adminState.token = DEFAULT_ADMIN_TOKEN;
     const graphJson = await adminFetch(
       `/api/admin/graph${region ? `?region=${encodeURIComponent(region)}` : ''}`,
     );
@@ -1597,20 +1587,7 @@ async function loadAdminGraph(region = '') {
     renderAdminGraphPanel();
   } catch (error) {
     console.error('loadAdminGraph error:', error);
-    try {
-      adminState.token = DEFAULT_ADMIN_TOKEN;
-      const retryJson = await adminFetch(
-        `/api/admin/graph${region ? `?region=${encodeURIComponent(region)}` : ''}`,
-      );
-      adminState.graph = retryJson.data;
-      adminState.route = null;
-      adminState.autoRouteAttempted = false;
-      adminState.nodePositions = buildAdminGraphLayout(adminState.graph);
-      resetAdminGraphViewBox();
-      renderAdminGraphPanel();
-    } catch (retryError) {
-      panel.innerHTML = `<div class="error-state" style="padding: 24px; color: #ef4444; background: #fef2f2; border: 2px solid #000000; border-radius: 16px; margin-top: 16px; font-weight: 800;">Failed to load admin graph: ${escapeHTML(retryError.message || error.message || 'Server error')}</div>`;
-    }
+    panel.innerHTML = `<div class="error-state">Failed to load admin graph: ${escapeHTML(error.message || 'Server error')}</div>`;
   }
 }
 

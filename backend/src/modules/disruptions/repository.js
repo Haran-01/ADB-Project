@@ -3,6 +3,7 @@ export async function createDisruption(pool, input) {
   const client = await pool.connect();
   try {
     return await transaction(client, async () => {
+      await client.query("select pg_advisory_xact_lock(hashtext('railway:disruption-write'))");
       const kind = input.track_id ? 'tracks' : 'stations';
       const target = input.track_id ?? input.station_id;
       await client.query("select pg_advisory_xact_lock(hashtext('railway:disruption-target:' || $1::text))", [

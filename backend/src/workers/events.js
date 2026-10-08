@@ -165,7 +165,7 @@ export class EventWorker {
     this.stopped = false;
     this.timer = setInterval(() => this.wake(), this.env.WORKER_POLL_MS ?? 2000);
     this.wake();
-    this.listening = this.listen();
+    if (this.env.DATABASE_URL || this.env.DATABASE_LISTEN_URL) this.listening = this.listen();
   }
   async stop() {
     this.stopped = true;

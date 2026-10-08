@@ -55,7 +55,7 @@ export class AnalysisService {
             journey.impact_type,
           ]);
           const route = journey.remaining_route;
-          const candidates = await this.graph.routes(route[0], route.at(-1), d.track_id ? [d.track_id] : []);
+          const candidates = await this.graph.routes(route[0], route.at(-1), d.track_id ? [d.track_id] : [], client);
           // Persist the best feasible candidate; graph cost is a suggestion only.
           let stored = false;
           for (const candidate of candidates) {

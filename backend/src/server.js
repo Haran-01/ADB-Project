@@ -23,10 +23,11 @@ io.use((socket, next) =>
   authorized(socket.handshake.auth?.token, env.API_TOKEN) ? next() : next(new Error('Unauthorized')),
 );
 const worker = new EventWorker({ pool, analysis, io, env });
+let stopOperationalReset;
 server.listen(env.PORT, env.HOST, () => {
   console.log(`Railway API listening on http://${env.HOST}:${env.PORT}`);
   if (env.WORKER_ENABLED === 'true') worker.start();
-  scheduleOperationalReset(pool);
+  stopOperationalReset = scheduleOperationalReset(pool);
 });
 
 let closing = false;
@@ -36,6 +37,7 @@ async function shutdown() {
   const watchdog = setTimeout(() => process.exit(1), 20000).unref();
   await worker.stop();
   await new Promise((resolve) => io.close(resolve));
+  await stopOperationalReset?.();
   await pool.end();
   await driver.close();
   clearTimeout(watchdog);

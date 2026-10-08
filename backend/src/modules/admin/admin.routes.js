@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { transaction } from '../../../../scripts/lib/database.mjs';
 
-const ADMIN_TOKEN = 'admin-session-token-12345';
 const REGION_SCHEMAS = ['railway_south', 'railway_central', 'railway_north'];
 const AVAILABLE_TRACK_STATUSES = new Set(['ACTIVE']);
 const REGION_CODES_BY_SCHEMA = {
@@ -51,7 +51,9 @@ const conflictSchema = z
   .strict()
   .refine((v) => Boolean(v.trackId) !== Boolean(v.stationId), {
     message: 'Exactly one trackId or stationId is required',
-  });
+  })
+  .refine(v => v.conflictType !== 'TRACK_FAILURE' || !!v.trackId, 'Track failure requires trackId')
+  .refine(v => v.conflictType !== 'STATION_CLOSURE' || !!v.stationId, 'Station closure requires stationId');
 const resolveConflictSchema = z
   .object({
     resolutionNote: z
@@ -63,12 +65,6 @@ const resolveConflictSchema = z
     restoreStatus: z.enum(['ACTIVE', 'FAILED', 'MAINTENANCE', 'BLOCKED']).default('ACTIVE'),
   })
   .strict();
-
-function requireAdmin(req, res, next) {
-  const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
-  if (token !== ADMIN_TOKEN) return res.status(403).json({ error: 'Administrator authorization required' });
-  next();
-}
 
 function graphVersion() {
   return new Date().toISOString();
@@ -184,14 +180,7 @@ function calculateRoute(graph, sourceCode, destinationCode, mode) {
   for (const edge of graph.edges) {
     if (!AVAILABLE_TRACK_STATUSES.has(edge.status)) continue;
     adjacency.get(edge.sourceCode)?.push(edge);
-    adjacency.get(edge.targetCode)?.push({
-      ...edge,
-      source: edge.target,
-      target: edge.source,
-      sourceCode: edge.targetCode,
-      targetCode: edge.sourceCode,
-      reversed: true,
-    });
+
   }
   for (const edges of adjacency.values()) {
     edges.sort((a, b) => a.targetCode.localeCompare(b.targetCode) || a.id.localeCompare(b.id));
@@ -263,7 +252,7 @@ async function getRegions(pool) {
            from ${schema}.stations s`,
         )
         .then((r) => r.rows[0])
-        .catch(() => ({ schema, stations: 0, tracks: 0, active_trains: 0, open_conflicts: 0 })),
+,
     ),
   );
 
@@ -285,7 +274,6 @@ async function getRegions(pool) {
     const target = graph.nodes.find((n) => n.id === edge.target);
     const sourceKey = source?.regionCode ?? source?.region?.toUpperCase();
     const targetKey = target?.regionCode ?? target?.region?.toUpperCase();
-    if (sourceKey && grouped.has(sourceKey)) grouped.get(sourceKey).tracks += 1;
     if (sourceKey && targetKey && sourceKey !== targetKey) {
       grouped.get(sourceKey)?.connectedRegions.add(target?.region ?? targetKey);
       grouped.get(targetKey)?.connectedRegions.add(source?.region ?? sourceKey);
@@ -298,7 +286,7 @@ async function getRegions(pool) {
   }));
 }
 
-export function adminRoutes(pool) {
+export function adminRoutes(pool, requireAdmin) {
   const router = Router();
   router.use(requireAdmin);
 
@@ -387,9 +375,12 @@ export function adminRoutes(pool) {
     res.json({ data: rows });
   });
 
-  router.post('/conflicts', async (req, res, next) => {
+  router.post('/conflicts', async (req, res) => {
+    const body = conflictSchema.parse(req.body);
+    const client = await pool.connect();
     try {
-      const body = conflictSchema.parse(req.body);
+      const result = await transaction(client, async () => {
+        await client.query("select pg_advisory_xact_lock(hashtext('railway:disruption-write'))");
     const description = [
       body.title,
       body.description,
@@ -401,7 +392,7 @@ export function adminRoutes(pool) {
 
     let damagedTrack = null;
     if (body.trackId) {
-      const { rows: trackRows } = await pool.query(
+      const { rows: trackRows } = await client.query(
         `select tr.id, tr.from_station_id, tr.to_station_id, tr.distance_km, tr.speed_limit_kmph, tr.status,
                 fs.station_code as from_code, fs.name as from_name,
                 ts.station_code as to_code, ts.name as to_name
@@ -414,7 +405,20 @@ export function adminRoutes(pool) {
       damagedTrack = trackRows[0] || null;
     }
 
-    const { rows } = await pool.query(
+    const target = body.trackId ?? body.stationId;
+    const targetTable = body.trackId ? 'tracks' : 'stations';
+    const found = await client.query(`select id from public.${targetTable} where id=$1`, [target]);
+    if (!found.rows.length) throw Object.assign(new Error('Target not found'), { status: 404 });
+    const existing = await client.query(`select d.id from public.disruptions d
+      left join public.tracks t on t.id=d.track_id
+      where d.status in ('OPEN','ANALYZING') and
+        (d.track_id=$1 or d.station_id=$1 or
+          (t.from_station_id=$2 and t.to_station_id=$3) or
+          (t.from_station_id=$3 and t.to_station_id=$2))`,
+      [target, damagedTrack?.from_station_id ?? null, damagedTrack?.to_station_id ?? null]);
+    if (existing.rows.length) throw Object.assign(new Error('Target already has an unresolved disruption'), { status: 409 });
+
+    const { rows } = await client.query(
       `insert into public.disruptions (type, track_id, station_id, severity, reported_by, description, status)
        values ($1,$2,$3,$4,$5,$6,'OPEN')
        returning *`,
@@ -424,7 +428,7 @@ export function adminRoutes(pool) {
     if (body.trackId && damagedTrack) {
       await Promise.all(
         REGION_SCHEMAS.map((schema) =>
-          pool.query(
+          client.query(
             `update ${schema}.tracks set status='BLOCKED', updated_at=now()
              where (from_station_id = $1 and to_station_id = $2)
                 or (from_station_id = $2 and to_station_id = $1)`,
@@ -435,14 +439,14 @@ export function adminRoutes(pool) {
     } else if (body.trackId) {
       await Promise.all(
         REGION_SCHEMAS.map((schema) =>
-          pool.query(`update ${schema}.tracks set status='BLOCKED', updated_at=now() where id=$1`, [
+          client.query(`update ${schema}.tracks set status='BLOCKED', updated_at=now() where id=$1`, [
             body.trackId,
           ]),
         ),
       );
     }
     if (body.stationId && body.conflictType === 'STATION_CLOSURE') {
-      await pool.query(`update public.stations set status='CLOSED', updated_at=now() where id=$1`, [
+      await client.query(`update public.stations set status='CLOSED', updated_at=now() where id=$1`, [
         body.stationId,
       ]);
     }
@@ -450,7 +454,7 @@ export function adminRoutes(pool) {
     const reroutedJourneys = [];
     if (body.trackId && body.autoAllocate !== false && damagedTrack) {
       // Fetch all running or scheduled train journeys
-      const { rows: journeys } = await pool.query(`
+      const { rows: journeys } = await client.query(`
         select tj.id as journey_id, tj.train_id, tj.journey_status, tj.delay_minutes,
                t.train_number, t.name as train_name,
                coalesce(tj.active_route, (
@@ -469,7 +473,7 @@ export function adminRoutes(pool) {
       `);
 
       // Rebuild graph for Dijkstra with the damaged track corridor strictly removed
-      const graph = await aggregateGraph(pool);
+      const graph = await aggregateGraph(client);
       graph.edges = graph.edges.filter(
         (e) =>
           e.id !== body.trackId &&
@@ -488,7 +492,7 @@ export function adminRoutes(pool) {
         if (!rawRoute || rawRoute.length < 2) continue;
 
         let traverseIndex = -1;
-        for (let i = 0; i < rawRoute.length - 1; i++) {
+        for (let i = Math.max(0, rawRoute.indexOf(j.current_code)); i < rawRoute.length - 1; i++) {
           if (
             (rawRoute[i] === damagedTrack.from_code && rawRoute[i + 1] === damagedTrack.to_code) ||
             (rawRoute[i] === damagedTrack.to_code && rawRoute[i + 1] === damagedTrack.from_code)
@@ -525,7 +529,7 @@ export function adminRoutes(pool) {
           }
 
           // Strategy 2: Reverse/inbound bypass from previous station (e.g. KPD -> MAS direct, avoiding AJJ)
-          if (!newAllocatedRoute && prevNode) {
+          if (!newAllocatedRoute && prevNode && prevNode !== j.current_code && rawRoute.indexOf(j.current_code) < traverseIndex) {
             const detour = calculateRoute(graph, prevNode, nextNode, 'shortest');
             if (detour.available && detour.stations.length >= 2) {
               dijkstraResult = detour;
@@ -589,7 +593,7 @@ export function adminRoutes(pool) {
             }
 
             // Re-allocate train to the newly calculated track route in database
-            await pool.query(
+            await client.query(
               `update public.train_journeys
                set active_route = $1::jsonb,
                    current_station_id = coalesce((select id from public.stations where station_code = $2), current_station_id),
@@ -602,15 +606,13 @@ export function adminRoutes(pool) {
             );
 
             // Record in affected_trains
-            await pool.query(
-              `insert into public.affected_trains (disruption_id, train_journey_id, impact_type, estimated_delay_minutes, status)
-               values ($1, $2, 'DIRECT_TRACK_BLOCK', $3, 'REROUTED')
-               on conflict do nothing`,
+            await client.query(
+              `call public.sp_record_affected_train($1,$2,'DIRECT_TRACK_BLOCK',$3,'REROUTED')`,
               [rows[0].id, j.journey_id, delayAdded],
             );
 
             // Record recommendation as applied
-            await pool.query(
+            await client.query(
               `insert into public.route_recommendations
                (disruption_id, train_journey_id, original_route, recommended_route, distance_km, estimated_travel_minutes, estimated_delay_minutes, score, status)
                values ($1, $2, $3::jsonb, $4::jsonb, $5, $6, $7, 100, 'APPLIED')`,
@@ -642,35 +644,40 @@ export function adminRoutes(pool) {
       }
     }
 
-    res.status(201).json({
+    return {
       data: rows[0],
       damagedTrack,
       affectedCount: reroutedJourneys.length,
       reroutedJourneys,
       graphVersion: graphVersion(),
-    });
-  } catch (err) {
-    console.error('POST /conflicts ERROR:', err);
-    next(err);
-  }
-});
+    };
+      });
+      res.status(201).json(result);
+    } finally { client.release(); }
+  });
 
   router.post('/conflicts/:id/resolve', async (req, res) => {
     const id = z.uuid().parse(req.params.id);
     const body = resolveConflictSchema.parse(req.body || {});
+    const client = await pool.connect();
+    try {
+      const result = await transaction(client, async () => {
+        await client.query("select pg_advisory_xact_lock(hashtext('railway:disruption-write'))");
     const {
       rows: [conflict],
-    } = await pool.query(`select * from public.disruptions where id=$1`, [id]);
-    if (!conflict) return res.status(404).json({ error: 'Conflict not found' });
+    } = await client.query(`select * from public.disruptions where id=$1`, [id]);
+    if (!conflict) throw Object.assign(new Error('Conflict not found'), { status: 404 });
+    if (['RESOLVED', 'CANCELLED'].includes(conflict.status))
+      throw Object.assign(new Error('Conflict is already closed'), { status: 409 });
 
     if (conflict.track_id) {
       const {
         rows: [t],
-      } = await pool.query(`select * from public.tracks where id=$1`, [conflict.track_id]);
+      } = await client.query(`select * from public.tracks where id=$1`, [conflict.track_id]);
       if (t) {
         await Promise.all(
           REGION_SCHEMAS.map((schema) =>
-            pool.query(
+            client.query(
               `update ${schema}.tracks set status=$1, updated_at=now()
                where (from_station_id = $2 and to_station_id = $3)
                   or (from_station_id = $3 and to_station_id = $2)`,
@@ -681,7 +688,7 @@ export function adminRoutes(pool) {
       } else {
         await Promise.all(
           REGION_SCHEMAS.map((schema) =>
-            pool.query(`update ${schema}.tracks set status=$1, updated_at=now() where id=$2`, [
+            client.query(`update ${schema}.tracks set status=$1, updated_at=now() where id=$2`, [
               body.restoreStatus,
               conflict.track_id,
             ]),
@@ -690,13 +697,13 @@ export function adminRoutes(pool) {
       }
     }
     if (conflict.station_id) {
-      await pool.query(`update public.stations set status='ACTIVE', updated_at=now() where id=$1`, [
+      await client.query(`update public.stations set status='ACTIVE', updated_at=now() where id=$1`, [
         conflict.station_id,
       ]);
     }
 
     // Restore any rerouted train journeys associated with this conflict back to their original route
-    const { rows: recs } = await pool.query(
+    const { rows: recs } = await client.query(
       `select rr.id as rec_id, rr.train_journey_id, rr.original_route, rr.estimated_delay_minutes,
               t.train_number, t.name as train_name,
               cs.station_code as current_code
@@ -728,7 +735,7 @@ export function adminRoutes(pool) {
         origNextCode = origRoute[0];
       }
 
-      await pool.query(
+      await client.query(
         `update public.train_journeys
          set active_route = $1::jsonb,
              current_station_id = coalesce((select id from public.stations where station_code = $2), current_station_id),
@@ -740,14 +747,14 @@ export function adminRoutes(pool) {
         [JSON.stringify(origRoute), origCurrentCode, origNextCode, r.estimated_delay_minutes || 0, r.train_journey_id],
       );
 
-      await pool.query(
+      await client.query(
         `update public.route_recommendations
          set status = 'EXPIRED', updated_at = now()
          where id = $1`,
         [r.rec_id],
       );
 
-      await pool.query(
+      await client.query(
         `update public.affected_trains
          set status = 'CLEARED'
          where disruption_id = $1 and train_journey_id = $2`,
@@ -762,26 +769,29 @@ export function adminRoutes(pool) {
     }
 
     // Mark any remaining affected train rows as CLEARED
-    await pool.query(
+    await client.query(
       `update public.affected_trains
        set status = 'CLEARED'
        where disruption_id = $1`,
       [id],
     );
 
-    const { rows } = await pool.query(
+    const { rows } = await client.query(
       `update public.disruptions
        set status='RESOLVED', ended_at=now(), updated_at=now(), description = description || $2
        where id=$1 returning *`,
       [id, `\n\nResolution: ${body.resolutionNote}`],
     );
 
-    res.json({
+    return {
       data: rows[0],
       restoredTrainsCount: restoredTrains.length,
       restoredTrains,
       graphVersion: graphVersion(),
-    });
+    };
+      });
+      res.json(result);
+    } finally { client.release(); }
   });
 
   return router;

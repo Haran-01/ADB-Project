@@ -1,7 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomBytes } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { ZodError } from 'zod';
 import { apiRoutes } from './routes/index.js';
 import { healthRoutes } from './modules/health/health.routes.js';
@@ -27,15 +28,32 @@ export function createApp(deps) {
   if (deps.env.NODE_ENV !== 'test') app.use(morgan(':method :url :status :response-time ms'));
   
   // Serve static web UI
-  app.use(express.static('frontend'));
+  app.use(express.static(fileURLToPath(new URL('../../frontend', import.meta.url))));
 
   app.use('/api/health', healthRoutes(deps.pool, deps.graph));
+  const adminToken = randomBytes(32).toString('hex');
+  const localDemo = deps.env.NODE_ENV !== 'production' && deps.env.HOST === '127.0.0.1';
+  const adminPassword = deps.env.ADMIN_PASSWORD || (localDemo ? 'admin123' : null);
+  const requireAdmin = (req, res, next) => {
+    const token = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+    if (!authorized(token, adminToken) && !(deps.env.API_TOKEN && authorized(token, deps.env.API_TOKEN)))
+      return res.status(403).json({ error: 'Administrator authorization required' });
+    next();
+  };
+  app.post('/api/auth/login', (req, res) => {
+    const { username, password } = req.body ?? {};
+    if (!adminPassword || username !== (deps.env.ADMIN_USERNAME || 'admin') || !authorized(password, adminPassword))
+      return res.status(401).json({ error: 'Invalid admin credentials' });
+    res.json({ data: { token: adminToken, user: { username, role: 'admin', name: 'Control Room Dispatcher' } } });
+  });
   app.use('/api', (req, res, next) => {
-    if (!authorized(req.get('authorization')?.replace(/^Bearer /, ''), deps.env.API_TOKEN))
+    if (!authorized(req.get('authorization')?.replace(/^Bearer\s+/i, ''), deps.env.API_TOKEN) &&
+        !authorized(req.get('authorization')?.replace(/^Bearer\s+/i, ''), adminToken))
       return res.status(401).json({ error: 'Unauthorized' });
     next();
   });
-  app.use('/api', apiRoutes(deps));
+  app.use('/api', (req, res, next) => req.method === 'POST' ? requireAdmin(req, res, next) : next());
+  app.use('/api', apiRoutes({ ...deps, requireAdmin }));
 
   app.use((_req, res) => res.status(404).json({ error: 'Not found' }));
   app.use((error, _req, res, _next) => {

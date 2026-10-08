@@ -25,29 +25,9 @@ const disruptionSchema = z
   .refine((v) => v.type !== 'TRACK_FAILURE' || !!v.track_id, 'Track failure requires track_id')
   .refine((v) => v.type !== 'STATION_CLOSURE' || !!v.station_id, 'Station closure requires station_id');
 
-export function apiRoutes({ pool, graph, analysis }) {
+export function apiRoutes({ pool, graph, analysis, requireAdmin }) {
   const router = Router();
-  router.post('/auth/login', async (req, res) => {
-    const { username, password } = req.body || {};
-    if (
-      (username === 'admin' || username === 'admin@railway.gov') &&
-      (password === 'admin123' || password === 'admin')
-    ) {
-      return res.json({
-        data: {
-          token: 'admin-session-token-12345',
-          user: {
-            id: 'usr-admin-1',
-            username: 'admin',
-            role: 'admin',
-            name: 'Control Room Dispatcher',
-          },
-        },
-      });
-    }
-    return res.status(401).json({ error: 'Invalid admin credentials' });
-  });
-  router.use('/admin', adminRoutes(pool));
+  router.use('/admin', adminRoutes(pool, requireAdmin));
   router.use('/stations', stationRoutes(pool));
   router.use('/tracks', trackRoutes(pool));
   router.use('/trains', trainRoutes(pool));
@@ -160,20 +140,22 @@ export function apiRoutes({ pool, graph, analysis }) {
       const arrival = toMinutes(row.scheduled_arrival);
       const departure = toMinutes(row.scheduled_departure);
       if (arrival == null && departure == null) return null;
-      if (arrival == null) return [departure, departure + 10];
-      if (departure == null) return [arrival - 10, arrival];
+      if (arrival == null) return [departure - 10, departure];
+      if (departure == null) return [arrival, arrival + 10];
       return [arrival, departure < arrival ? departure + 24 * 60 : departure];
     };
 
     // Detect conflicts only when platform assignments overlap at the same station.
+    const windows = schedules.map(occupancy);
     const conflicts = [];
     for (let i = 0; i < schedules.length; i++) {
       for (let j = i + 1; j < schedules.length; j++) {
         const s1 = schedules[i];
         const s2 = schedules[j];
-        const w1 = occupancy(s1);
-        const w2 = occupancy(s2);
-        const overlaps = w1 && w2 && w1[0] < w2[1] && w2[0] < w1[1];
+        if (s1.station_code !== s2.station_code || s1.platform !== s2.platform) break;
+        const w1 = windows[i];
+        const w2 = windows[j];
+        const overlaps = w1 && w2 && [-1440, 0, 1440].some(shift => w1[0] < w2[1] + shift && w2[0] + shift < w1[1]);
         if (
           s1.station_code === s2.station_code &&
           s1.platform === s2.platform &&

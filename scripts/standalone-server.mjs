@@ -5,7 +5,8 @@ import { pathToFileURL } from 'node:url';
 import { Server } from 'socket.io';
 import { PGlite } from '@electric-sql/pglite';
 import { postgis } from '@electric-sql/pglite-postgis';
-import { createApp } from '../backend/src/app.js';
+import { createPglitePool } from './lib/pglite-pool.mjs';
+import { createApp, authorized } from '../backend/src/app.js';
 import { AnalysisService } from '../backend/src/modules/analysis/service.js';
 import { EventWorker } from '../backend/src/workers/events.js';
 import { projectRoot } from './lib/database.mjs';
@@ -19,7 +20,7 @@ function getSqlFiles(dir) {
     .map((f) => readFileSync(path.join(full, f), 'utf8'));
 }
 
-async function createInMemoryDatabase() {
+export async function createInMemoryDatabase() {
   const db = new PGlite({ extensions: { postgis } });
   const sqlDirs = [
     'database/migrations',
@@ -46,7 +47,43 @@ async function createInMemoryDatabase() {
     const { expandTrainData } = await import(pathToFileURL(expanderPath).href);
     await expandTrainData(db);
   }
-  return db;
+  return createPglitePool(db);
+}
+
+export function createLocalGraph(client) {
+  // In-memory graph router matching Neo4j behavior for local standalone mode
+  return {
+    health: async () => true,
+    sync: async () => {},
+    routes: async (from, to, excludeTracks = [], queryClient = client) => {
+      if (from === to) return [];
+      const res = await queryClient.query(
+        `with recursive paths(path, last_station, total_dist, travel_minutes, track_ids) as (
+          select array[s.station_code]::text[], s.station_code, 0.0, 0.0, array[]::uuid[]
+          from public.stations s where s.station_code = $1 and s.status='ACTIVE'
+            and not exists(select 1 from public.disruptions d where d.station_id=s.id and d.status in ('OPEN','ANALYZING') and d.started_at<=now() and (d.ended_at is null or d.ended_at>now()))
+          union all
+          select p.path || s2.station_code, s2.station_code, p.total_dist + t.distance_km, p.travel_minutes + ceil(t.distance_km/t.speed_limit_kmph*60), p.track_ids || t.id
+          from paths p
+          join public.stations s1 on s1.station_code = p.last_station
+          join public.tracks t on t.from_station_id = s1.id and t.status = 'ACTIVE'
+          join public.stations s2 on s2.id = t.to_station_id and s2.status='ACTIVE'
+          cross join lateral public.fn_get_active_track_availability(t.id) availability
+          where availability.is_available and not (s2.station_code = any(p.path))
+            and p.last_station <> $2
+            and not exists(select 1 from public.disruptions d where d.station_id=s2.id and d.status in ('OPEN','ANALYZING') and d.started_at<=now() and (d.ended_at is null or d.ended_at>now()))
+            and array_length(p.path, 1) < 13
+            and not (t.id = any($3::uuid[]))
+        )
+        select path as "stationCodes", total_dist as "distanceKm", travel_minutes as "travelMinutes", track_ids as "trackIds"
+        from paths where last_station = $2
+        order by travel_minutes, path limit 3`,
+        [from, to, excludeTracks],
+      );
+      return res.rows || [];
+    },
+  };
+
 }
 
 async function main() {
@@ -54,48 +91,28 @@ async function main() {
   const client = await createInMemoryDatabase();
   console.log('Database initialized successfully with schema, PostGIS, seeds, triggers, and views!');
 
-  // In-memory graph router matching Neo4j behavior for local standalone mode
-  const graph = {
-    health: async () => true,
-    sync: async () => {},
-    routes: async (from, to, excludeTracks = []) => {
-      const res = await client.query(
-        `with recursive paths(path, last_station, total_dist) as (
-          select array[s.station_code]::text[], s.station_code, 0.0
-          from public.stations s where s.station_code = $1
-          union all
-          select p.path || s2.station_code, s2.station_code, p.total_dist + t.distance_km
-          from paths p
-          join public.stations s1 on s1.station_code = p.last_station
-          join public.tracks t on t.from_station_id = s1.id and t.status = 'ACTIVE'
-          join public.stations s2 on s2.id = t.to_station_id
-          where not (s2.station_code = any(p.path))
-            and array_length(p.path, 1) < 12
-            and not (t.id = any($3::uuid[]))
-        )
-        select path as "stationCodes", total_dist as "distanceKm", ceil(total_dist / 80 * 60) as "travelMinutes"
-        from paths where last_station = $2
-        order by total_dist limit 3`,
-        [from, to, excludeTracks],
-      );
-      return res.rows || [];
-    },
-  };
-
+  const graph = createLocalGraph(client);
   const analysis = new AnalysisService(client, graph);
   const env = {
     PORT: process.env.PORT || 4003,
-    HOST: process.env.HOST || '0.0.0.0',
-    NODE_ENV: process.env.NODE_ENV || 'production',
-    FRONTEND_ORIGIN: '*',
+    HOST: process.env.HOST || '127.0.0.1',
+    NODE_ENV: process.env.NODE_ENV || 'development',
+    FRONTEND_ORIGIN: process.env.FRONTEND_ORIGIN || 'http://localhost:5173',
+    API_TOKEN: process.env.API_TOKEN,
+    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+    ADMIN_USERNAME: process.env.ADMIN_USERNAME,
     WORKER_ENABLED: process.env.WORKER_ENABLED ?? 'true',
     WORKER_POLL_MS: 1000,
   };
 
+  if ((env.NODE_ENV === 'production' || env.HOST !== '127.0.0.1') && (!env.API_TOKEN || env.API_TOKEN.length < 24 || !env.ADMIN_PASSWORD || env.ADMIN_PASSWORD.length < 12))
+    throw new Error('Public/production standalone mode requires API_TOKEN (24+ chars) and ADMIN_PASSWORD (12+ chars)');
+
   const app = createApp({ pool: client, graph, analysis, env });
   const server = createServer(app);
-  const io = new Server(server, { cors: { origin: '*' } });
+  const io = new Server(server, { cors: { origin: env.FRONTEND_ORIGIN } });
 
+  io.use((socket, next) => authorized(socket.handshake.auth?.token, env.API_TOKEN) ? next() : next(new Error('Unauthorized')));
   const worker = new EventWorker({ pool: client, analysis, io, env });
 
   server.listen(env.PORT, env.HOST, () => {
@@ -106,15 +123,19 @@ async function main() {
     if (env.WORKER_ENABLED === 'true') worker.start();
   });
 
-  process.on('SIGINT', async () => {
+  let closing = false;
+  const shutdown = async () => {
+    if (closing) return;
+    closing = true;
     await worker.stop();
     await new Promise((r) => io.close(r));
     await client.close();
-    process.exit(0);
-  });
+  };
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }
 
-main().catch((err) => {
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch((err) => {
   console.error('Failed to start standalone server:', err);
   process.exit(1);
 });

@@ -21,7 +21,8 @@ export class DistributedQueryEngine {
    * Execute a query against a specific regional fragment node
    */
   async queryFragment(regionKey, sql, params = []) {
-    const schema = REGION_SCHEMAS[regionKey] || `railway_${regionKey}`;
+    const schema = REGION_SCHEMAS[regionKey];
+    if (!schema) throw new Error('Unknown regional fragment');
     const formattedSql = sql.replace(/\{schema\}/g, schema);
     const { rows } = await this.pool.query(formattedSql, params);
     return rows;
@@ -31,26 +32,31 @@ export class DistributedQueryEngine {
    * Scatter-Gather: Execute queries concurrently across all regional node fragments and combine results
    */
   async scatterGather(table, orderColumn = 'id', limit = 100, offset = 0) {
-    const promises = REGIONS.map((region) =>
-      this.queryFragment(
-        region,
-        `select '${region}' as source_fragment, * from {schema}.${table} order by ${orderColumn} limit $1 offset $2`,
-        [limit, offset]
-      ).catch(() => [])
-    );
-
-    const fragmentResults = await Promise.all(promises);
-    
-    // Merge results from all regional fragments into a single collective dataset
+    if (!['stations', 'tracks', 'trains', 'train_schedules'].includes(table))
+      throw new Error('Unsupported fragment table');
+    const order = orderColumn.split(',').map((part) => {
+      const match = part.trim().match(/^([a-z_][a-z0-9_]*)(?: +(asc|desc))?$/i);
+      if (!match) throw new Error('Invalid fragment order');
+      return { column: match[1], direction: match[2]?.toLowerCase() === 'desc' ? -1 : 1 };
+    });
+    if (!order.some(({ column }) => column === 'id')) order.push({ column: 'id', direction: 1 });
+    const sqlOrder = order.map(({ column, direction }) => `${column} ${direction === 1 ? 'asc' : 'desc'}`).join(',');
+    const fragmentResults = await Promise.all(REGIONS.map((region) =>
+      this.queryFragment(region,
+        `select '${region}' as source_fragment, * from {schema}.${table} order by ${sqlOrder} limit $1 offset $2`,
+        [limit + offset, 0]),
+    ));
     const combined = fragmentResults.flat();
-    
-    // Sort merged results
     combined.sort((a, b) => {
-      if (a[orderColumn] < b[orderColumn]) return -1;
-      if (a[orderColumn] > b[orderColumn]) return 1;
+      for (const { column, direction } of order) {
+        if (a[column] == null && b[column] == null) continue;
+        if (a[column] == null) return direction;
+        if (b[column] == null) return -direction;
+        if (a[column] < b[column]) return -direction;
+        if (a[column] > b[column]) return direction;
+      }
       return 0;
     });
-
     return combined.slice(offset, offset + limit);
   }
 
@@ -72,7 +78,7 @@ export class DistributedQueryEngine {
           r,
           `select '${r}' as train_region_fragment, * from {schema}.trains ${trainId ? 'where id = $1' : ''}`,
           trainId ? [trainId] : []
-        ).catch(() => [])
+        )
       )
     );
     const trains = trainFragments.flat();
@@ -84,7 +90,7 @@ export class DistributedQueryEngine {
           r,
           `select '${r}' as schedule_region_fragment, * from {schema}.train_schedules ${trainId ? 'where train_id = $1' : ''}`,
           trainId ? [trainId] : []
-        ).catch(() => [])
+        )
       )
     );
     const schedules = scheduleFragments.flat();
@@ -92,7 +98,7 @@ export class DistributedQueryEngine {
     // Step 3: Fragment Retrieval - Scatter queries across regional station nodes
     const stationFragments = await Promise.all(
       REGIONS.map((r) =>
-        this.queryFragment(r, `select '${r}' as station_region_fragment, * from {schema}.stations`).catch(() => [])
+        this.queryFragment(r, `select '${r}' as station_region_fragment, * from {schema}.stations`)
       )
     );
     const stations = stationFragments.flat();
@@ -100,9 +106,13 @@ export class DistributedQueryEngine {
     // Step 4: Cross-Fragment JOIN / MERGE in memory (Key-based Hash Join)
     const stationMap = new Map(stations.map((s) => [s.id, s]));
 
+    const schedulesByTrain = new Map();
+    for (const schedule of schedules) {
+      if (!schedulesByTrain.has(schedule.train_id)) schedulesByTrain.set(schedule.train_id, []);
+      schedulesByTrain.get(schedule.train_id).push(schedule);
+    }
     const joinedResults = trains.map((train) => {
-      const trainSchedules = schedules
-        .filter((sch) => sch.train_id === train.id)
+      const trainSchedules = (schedulesByTrain.get(train.id) ?? [])
         .sort((a, b) => a.stop_sequence - b.stop_sequence)
         .map((sch) => {
           const station = stationMap.get(sch.station_id);
